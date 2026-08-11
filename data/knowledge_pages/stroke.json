@@ -1,0 +1,41 @@
+{
+  "id": "kb_stroke_secondary_prevention",
+  "title": "脑卒中/TIA：二级预防用药原则",
+  "topic": "脑卒中",
+  "keywords": ["脑卒中", "中风", "TIA", "二级预防", "阿司匹林", "氯吡格雷", "抗血小板", "stroke"],
+  "summary": "卒中二级预防首先需要明确病因；非心源性缺血性卒中通常以抗血小板治疗为基础，房颤等心源性机制则常需抗凝评估。",
+  "claims": [
+    {
+      "id": "stroke_claim_1",
+      "text": "AHA/ASA 指南强调二级预防应按卒中或 TIA 的病因分层，并同时管理血压、血脂、糖尿病、吸烟和生活方式等可干预风险。",
+      "evidence_level": "Guideline",
+      "applicable": "既往卒中或 TIA 患者的长期二级预防",
+      "exceptions": "急性期再灌注、出血性卒中及特殊血管病变需单独处理",
+      "citations": [
+        {"type": "pmid", "pmid": "34024117", "source": "2021 AHA/ASA Stroke Secondary Prevention Guideline", "url": "https://pubmed.ncbi.nlm.nih.gov/34024117/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "stroke_claim_2",
+      "text": "阿司匹林或氯吡格雷均可用于部分非心源性缺血性卒中的单药二级预防；选择应考虑既往事件、出血风险、耐受性、相互作用和费用，不能仅凭总体试验结果判定所有患者都优先用同一种。",
+      "evidence_level": "Guideline",
+      "applicable": "适合抗血小板治疗的非心源性缺血性卒中或 TIA",
+      "exceptions": "房颤等心源性卒中通常需要抗凝评估；长期双联抗血小板并不适用于大多数患者",
+      "citations": [
+        {"type": "pmid", "pmid": "34024117", "source": "2021 AHA/ASA Stroke Secondary Prevention Guideline", "url": "https://pubmed.ncbi.nlm.nih.gov/34024117/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "stroke_claim_3",
+      "text": "CAPRIE 随机试验在合并近期缺血性卒中、近期心肌梗死或外周动脉病的总体动脉粥样硬化人群中观察到氯吡格雷相对阿司匹林的小幅总体获益；该结果不能直接等同于每一位卒中患者都应首选氯吡格雷。",
+      "evidence_level": "RCT",
+      "applicable": "有症状的动脉粥样硬化性血管病人群",
+      "exceptions": "并非专门只纳入卒中患者；个体选择仍需结合指南与出血风险",
+      "citations": [
+        {"type": "pmid", "pmid": "8918275", "source": "CAPRIE trial", "url": "https://pubmed.ncbi.nlm.nih.gov/8918275/", "verified_at": "2026-08-11"}
+      ]
+    }
+  ],
+  "limitations": "不覆盖卒中急性期治疗，且不应据此自行更换抗血栓药。",
+  "updated_at": "2026-08-11"
+}

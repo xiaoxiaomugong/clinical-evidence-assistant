@@ -1,0 +1,9 @@
+{
+  "version": "v3",
+  "created_at": "2026-08-11",
+  "description": "五主题知识页、离线演示语料与可选的 PyMuPDF 多栏重排 PMID PDF 本地全文索引",
+  "knowledge_pages": 5,
+  "pdf_collection_documents": 500,
+  "pdf_collection_bundled": false,
+  "source_policy": "知识页与 PDF 集合使用 PMID 结构化元数据；PDF 无法解析时以 PubMed 摘要兜底"
+}

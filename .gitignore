@@ -1,0 +1,20 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.streamlit/secrets.toml
+data/cache/*.json
+data/eval_results/
+.DS_Store
+
+# Local literature corpus and generated full-text indexes are intentionally
+# excluded: source PDFs may have redistribution restrictions and the generated
+# artifacts are too large for a normal Git repository.
+500-collection/
+data/raw/pdf_collection.sqlite3
+data/raw/pdf_collection.sqlite3-*
+data/raw/pdf_collection_pubmed.json
+data/raw/pdf_collection.report.json

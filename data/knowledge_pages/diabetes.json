@@ -1,0 +1,41 @@
+{
+  "id": "kb_t2d_therapy",
+  "title": "2 型糖尿病：降糖方案的个体化选择",
+  "topic": "糖尿病",
+  "keywords": ["2 型糖尿病", "降糖", "GLP-1", "SGLT2", "肥胖", "心衰", "肾病", "diabetes"],
+  "summary": "2 型糖尿病药物选择不只看血糖，还需同时考虑体重、ASCVD、心衰、慢性肾病、低血糖风险和可负担性。",
+  "claims": [
+    {
+      "id": "dm_claim_1",
+      "text": "ADA 2025 标准建议以患者为中心选择降糖药，将血糖目标与体重管理、心血管和肾脏共病、低血糖风险、不良反应、费用及患者偏好一并纳入。",
+      "evidence_level": "Guideline",
+      "applicable": "成人 2 型糖尿病",
+      "exceptions": "1 型糖尿病、妊娠糖尿病和高血糖急症不适用此常规路径",
+      "citations": [
+        {"type": "pmid", "pmid": "39651989", "source": "ADA Standards of Care in Diabetes—2025, Section 9", "url": "https://pubmed.ncbi.nlm.nih.gov/39651989/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "dm_claim_2",
+      "text": "GLP-1 受体激动剂与 SGLT2 抑制剂并非简单的二选一：前者通常更侧重显著减重与动脉粥样硬化性心血管风险，后者在心衰和慢性肾病场景具有重要位置；部分患者可考虑联合。",
+      "evidence_level": "Guideline",
+      "applicable": "需要升级治疗、尤其合并肥胖或心肾高风险的成人 2 型糖尿病",
+      "exceptions": "需结合 eGFR、胃肠道耐受、泌尿生殖道感染风险、费用和具体禁忌证",
+      "citations": [
+        {"type": "pmid", "pmid": "39651989", "source": "ADA Standards of Care in Diabetes—2025, Section 9", "url": "https://pubmed.ncbi.nlm.nih.gov/39651989/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "dm_claim_3",
+      "text": "当存在明显高血糖症状、分解代谢表现或血糖非常高时，应及时评估胰岛素；达到稳定后仍可根据个体情况简化或调整方案。",
+      "evidence_level": "Guideline",
+      "applicable": "高血糖明显的成人 2 型糖尿病",
+      "exceptions": "具体启动阈值和剂量必须由临床人员结合检查结果确定",
+      "citations": [
+        {"type": "pmid", "pmid": "39651989", "source": "ADA Standards of Care in Diabetes—2025, Section 9", "url": "https://pubmed.ncbi.nlm.nih.gov/39651989/", "verified_at": "2026-08-11"}
+      ]
+    }
+  ],
+  "limitations": "知识页没有涵盖全部药物、剂量和医保差异。",
+  "updated_at": "2026-08-11"
+}

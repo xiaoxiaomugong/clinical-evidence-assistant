@@ -1,0 +1,41 @@
+{
+  "id": "kb_lifestyle_cardiometabolic",
+  "title": "饮食与三高：地中海饮食、钠摄入与风险管理",
+  "topic": "心脑血管",
+  "keywords": ["地中海饮食", "限钠", "低盐", "生活方式", "血压", "血脂", "糖尿病", "心血管", "Mediterranean diet", "sodium"],
+  "summary": "健康饮食是血压、血脂、糖代谢和总体心血管风险管理的共同基础，但不能机械替代必要的药物治疗。",
+  "claims": [
+    {
+      "id": "diet_claim_1",
+      "text": "PREDIMED 重新发表的随机试验支持：在心血管高风险但基线无心血管病的成人中，强化地中海饮食相较对照饮食建议可降低主要心血管事件风险。",
+      "evidence_level": "RCT",
+      "applicable": "心血管高风险成人的一级预防场景",
+      "exceptions": "研究在西班牙完成，饮食实施方式与人群背景会影响外推",
+      "citations": [
+        {"type": "pmid", "pmid": "29897866", "source": "PREDIMED reanalysis and republication", "url": "https://pubmed.ncbi.nlm.nih.gov/29897866/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "diet_claim_2",
+      "text": "CORDIOPREV 随机试验在已确诊冠心病人群中比较地中海饮食与低脂饮食，为地中海饮食用于心血管二级预防提供了长期临床结局证据。",
+      "evidence_level": "RCT",
+      "applicable": "已确诊冠心病的成人",
+      "exceptions": "单中心研究，且结构化营养随访强度可能高于常规环境",
+      "citations": [
+        {"type": "pmid", "pmid": "35525255", "source": "CORDIOPREV trial", "url": "https://pubmed.ncbi.nlm.nih.gov/35525255/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "diet_claim_3",
+      "text": "INTERMAP 多国人群研究观察到 24 小时尿钠排泄与血压呈直接关系；限钠通常是高血压生活方式管理的一部分，但个体目标还需结合膳食结构、肾功能和用药。",
+      "evidence_level": "Other",
+      "applicable": "一般成人与高血压风险人群",
+      "exceptions": "该证据主要为观察性关联，不能单独证明所有个体的因果效应大小",
+      "citations": [
+        {"type": "pmid", "pmid": "29507099", "source": "INTERMAP study", "url": "https://pubmed.ncbi.nlm.nih.gov/29507099/", "verified_at": "2026-08-11"}
+      ]
+    }
+  ],
+  "limitations": "饮食研究难以完全盲法；个体目标需结合总能量、钾摄入、肾功能与文化饮食习惯。",
+  "updated_at": "2026-08-11"
+}

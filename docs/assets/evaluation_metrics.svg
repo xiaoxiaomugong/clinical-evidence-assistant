@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="430" viewBox="0 0 840 430">
+  <style>
+    .title{font:700 22px system-ui;fill:#102a2e}.sub{font:13px system-ui;fill:#61777a}
+    .label{font:14px system-ui;fill:#243f43}.value{font:700 14px system-ui;fill:#0b5f5a}
+  </style>
+  <rect width="840" height="430" rx="18" fill="#f7faf8"/>
+  <text x="24" y="34" class="title">Bundled offline evaluation</text>
+  <text x="24" y="53" class="sub">15 fixed questions · corpus v3 + 500 PDF records · hybrid mode</text>
+  <g>
+    <text x="24" y="82" class="label">Recall@8</text><rect x="205" y="65" width="520" height="24" rx="7" fill="#e5f0ed"/><rect x="205" y="65" width="520" height="24" rx="7" fill="#0b7b75"/><text x="742" y="82" class="value">100.0%</text>
+    <text x="24" y="136" class="label">MRR</text><rect x="205" y="119" width="520" height="24" rx="7" fill="#e5f0ed"/><rect x="205" y="119" width="498" height="24" rx="7" fill="#0b7b75"/><text x="742" y="136" class="value">95.8%</text>
+    <text x="24" y="190" class="label">nDCG@8</text><rect x="205" y="173" width="520" height="24" rx="7" fill="#e5f0ed"/><rect x="205" y="173" width="499" height="24" rx="7" fill="#0b7b75"/><text x="742" y="190" class="value">96.0%</text>
+    <text x="24" y="244" class="label">Citation accuracy</text><rect x="205" y="227" width="520" height="24" rx="7" fill="#e5f0ed"/><rect x="205" y="227" width="520" height="24" rx="7" fill="#0b7b75"/><text x="742" y="244" class="value">100.0%</text>
+    <text x="24" y="298" class="label">Key-point coverage</text><rect x="205" y="281" width="520" height="24" rx="7" fill="#e5f0ed"/><rect x="205" y="281" width="466" height="24" rx="7" fill="#0b7b75"/><text x="742" y="298" class="value">89.6%</text>
+    <text x="24" y="352" class="label">Refusal accuracy</text><rect x="205" y="335" width="520" height="24" rx="7" fill="#e5f0ed"/><rect x="205" y="335" width="520" height="24" rx="7" fill="#0b7b75"/><text x="742" y="352" class="value">100.0%</text>
+  </g>
+  <text x="24" y="411" class="sub">Engineering regression metrics; not a clinical validation study.</text>
+</svg>

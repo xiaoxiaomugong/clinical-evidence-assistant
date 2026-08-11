@@ -1,0 +1,41 @@
+{
+  "id": "kb_lipid_management",
+  "title": "血脂异常：风险分层、他汀与肌肉症状",
+  "topic": "血脂",
+  "keywords": ["血脂", "胆固醇", "LDL-C", "他汀", "肌肉疼痛", "ASCVD", "statin", "lipid"],
+  "summary": "降脂治疗以总体动脉粥样硬化性心血管风险为基础，高危人群通常以他汀为核心并按反应复评。",
+  "claims": [
+    {
+      "id": "lipid_claim_1",
+      "text": "胆固醇管理指南强调先评估 ASCVD 风险、危险增强因素与患者偏好，再共同决定他汀强度；LDL-C 显著升高或已存在 ASCVD 的人群通常属于药物治疗优先级较高者。",
+      "evidence_level": "Guideline",
+      "applicable": "成人原发或继发预防场景",
+      "exceptions": "妊娠、严重肝病及特殊遗传性血脂异常需要专门评估",
+      "citations": [
+        {"type": "pmid", "pmid": "31132793", "source": "2018 AHA/ACC 多学会胆固醇指南概要", "url": "https://pubmed.ncbi.nlm.nih.gov/31132793/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "lipid_claim_2",
+      "text": "大规模双盲随机试验个体数据荟萃分析显示，他汀导致的肌痛或无力绝对增量较小，主要集中在治疗第一年；多数服药期间报告的肌肉症状并非由他汀本身造成。",
+      "evidence_level": "Meta-analysis",
+      "applicable": "考虑或正在接受他汀治疗的成人",
+      "exceptions": "出现明显无力、深色尿或肌酸激酶显著升高等情况需及时就医评估",
+      "citations": [
+        {"type": "pmid", "pmid": "36049498", "source": "CTT Collaboration 个体参与者数据荟萃分析", "url": "https://pubmed.ncbi.nlm.nih.gov/36049498/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "lipid_claim_3",
+      "text": "生活方式干预是所有风险层级的基础，但是否加用药物不能只看一次血脂结果；应结合 LDL-C 水平、年龄、既往心血管病、糖尿病、血压、吸烟和家族史等因素。",
+      "evidence_level": "Guideline",
+      "applicable": "需要进行血脂管理的成人",
+      "exceptions": "极高 LDL-C 或明确 ASCVD 时不应以生活方式试验延误必要的药物评估",
+      "citations": [
+        {"type": "pmid", "pmid": "31132793", "source": "2018 AHA/ACC 多学会胆固醇指南概要", "url": "https://pubmed.ncbi.nlm.nih.gov/31132793/", "verified_at": "2026-08-11"}
+      ]
+    }
+  ],
+  "limitations": "风险阈值随地区指南而异；未实现个体化风险计算器。",
+  "updated_at": "2026-08-11"
+}

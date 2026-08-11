@@ -1,0 +1,41 @@
+{
+  "id": "kb_htn_first_line",
+  "title": "成人高血压：起始药物与长期管理",
+  "topic": "高血压",
+  "keywords": ["高血压", "降压药", "ACEI", "ARB", "CCB", "利尿剂", "长期服药", "服药时间", "hypertension"],
+  "summary": "成人高血压管理需要确认诊断、评估合并症与总体风险，并在生活方式干预基础上个体化选择药物。",
+  "claims": [
+    {
+      "id": "htn_claim_1",
+      "text": "WHO 指南面向已准确诊断且接受生活方式干预建议的非妊娠成人，给出了启动药物治疗的血压阈值、治疗目标和随访间隔；长期方案应结合血压控制、耐受性和总体心血管风险复评。",
+      "evidence_level": "Guideline",
+      "applicable": "已确诊的非妊娠成人高血压患者",
+      "exceptions": "妊娠期、继发性高血压或高血压急症需使用专门路径",
+      "citations": [
+        {"type": "pmid", "pmid": "34775787", "source": "WHO 高血压药物治疗指南执行摘要", "url": "https://pubmed.ncbi.nlm.nih.gov/34775787/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "htn_claim_2",
+      "text": "WHO 指南讨论了单药、双药和单片复方方案；常用起始药物类别包括噻嗪/噻嗪样利尿剂、ACEI/ARB 与长效二氢吡啶类 CCB，具体选择需结合禁忌证、合并症、可及性与患者偏好。",
+      "evidence_level": "Guideline",
+      "applicable": "需要启动药物治疗的普通成人",
+      "exceptions": "ACEI/ARB 不用于妊娠；具体药物须由临床人员结合肾功能、电解质等决定",
+      "citations": [
+        {"type": "pmid", "pmid": "34495610", "source": "WHO Guideline for the pharmacological treatment of hypertension in adults", "url": "https://pubmed.ncbi.nlm.nih.gov/34495610/", "verified_at": "2026-08-11"}
+      ]
+    },
+    {
+      "id": "htn_claim_3",
+      "text": "TIME 随机试验中，常用降压药晚间服用与早晨服用在主要心血管结局上没有显著差异；多数患者可选择更便于坚持且能减少不良反应的服药时间。",
+      "evidence_level": "RCT",
+      "applicable": "正在服用至少一种常规降压药的成人高血压患者",
+      "exceptions": "利尿剂、夜间低血压风险或特殊医嘱可能影响时间选择",
+      "citations": [
+        {"type": "pmid", "pmid": "36240838", "source": "TIME study", "url": "https://pubmed.ncbi.nlm.nih.gov/36240838/", "verified_at": "2026-08-11"}
+      ]
+    }
+  ],
+  "limitations": "未覆盖妊娠、高血压急症和全部合并症；不能替代个体化处方。",
+  "updated_at": "2026-08-11"
+}
