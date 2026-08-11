@@ -145,6 +145,26 @@ python3 scripts/verify_pmids.py --strict
 python3 scripts/collect_corpus.py --target 200
 ```
 
+## Supabase 云端证据库
+
+仓库包含可直接部署的 Supabase 迁移、显式 Data API 授权、RLS 只读策略、全文检索
+RPC 和增量 upsert 脚本。应用仍保持离线优先：启用云端后会把 Supabase 候选加入统一
+重排，连接失败则自动回退知识页、JSON 快照和 SQLite PDF 索引。
+
+```bash
+# 不联网检查将要同步的数据量
+python3 scripts/sync_supabase.py push --source snapshot --dry-run
+
+# 配置 SUPABASE_URL / SUPABASE_SECRET_KEY 后执行幂等更新
+python3 scripts/sync_supabase.py push --source snapshot
+
+# 从云端生成新的离线快照
+python3 scripts/sync_supabase.py pull
+```
+
+本地 PDF 默认仅同步题录/摘要；只有确认拥有相应权利时才可显式加入全文。完整建库、
+密钥和安全说明见 [docs/supabase.md](docs/supabase.md)。
+
 生成语料质量报告，并检查知识页可追溯字段：
 
 ```bash

@@ -34,7 +34,9 @@ class Settings:
     data_dir: Path = ROOT_DIR / "data"
     cache_dir: Path = ROOT_DIR / "data" / "cache"
     knowledge_dir: Path = ROOT_DIR / "data" / "knowledge_pages"
-    local_corpus_path: Path = ROOT_DIR / "data" / "raw" / "local_corpus.json"
+    local_corpus_path: Path = _as_path(
+        os.getenv("LOCAL_CORPUS_PATH", ""), ROOT_DIR / "data" / "raw" / "local_corpus.json"
+    )
     pdf_collection_dir: Path = ROOT_DIR / "500-collection"
     pdf_index_path: Path = ROOT_DIR / "data" / "raw" / "pdf_collection.sqlite3"
     corpus_version: str = "v3"
@@ -72,6 +74,11 @@ class Settings:
     llm_model: str = os.getenv("LLM_MODEL", "gpt-4.1-mini")
     pubmed_api_key: str = os.getenv("PUBMED_API_KEY", "")
     ncbi_email: str = os.getenv("NCBI_EMAIL", "")
+    enable_supabase: bool = _as_bool(os.getenv("ENABLE_SUPABASE"), False)
+    supabase_url: str = os.getenv("SUPABASE_URL", "").strip()
+    supabase_publishable_key: str = os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
+    supabase_secret_key: str = os.getenv("SUPABASE_SECRET_KEY", "").strip()
+    supabase_timeout: int = int(os.getenv("SUPABASE_TIMEOUT", "15"))
 
     def ensure_directories(self) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)

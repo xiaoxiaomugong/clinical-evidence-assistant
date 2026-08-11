@@ -22,6 +22,8 @@ from .retrievers import (
     LocalCorpus,
     PdfCorpus,
     PrecomputedRetriever,
+    SupabaseCorpus,
+    SupabaseStoreError,
     clinicaltrials_search,
     europepmc_search,
     pubmed_search,
@@ -46,6 +48,23 @@ class EvidencePipeline:
         self.knowledge = KnowledgeBase(cfg.knowledge_dir)
         self.local_corpus = LocalCorpus(cfg.local_corpus_path)
         self.pdf_corpus = PdfCorpus(cfg.pdf_index_path)
+        self.supabase_corpus = None
+        self.supabase_configuration_error = ""
+        if cfg.enable_supabase:
+            if not cfg.supabase_url or not cfg.supabase_publishable_key:
+                self.supabase_configuration_error = (
+                    "ENABLE_SUPABASE=true 但未配置 SUPABASE_URL/"
+                    "SUPABASE_PUBLISHABLE_KEY"
+                )
+            else:
+                try:
+                    self.supabase_corpus = SupabaseCorpus(
+                        cfg.supabase_url,
+                        cfg.supabase_publishable_key,
+                        timeout=cfg.supabase_timeout,
+                    )
+                except ValueError as error:
+                    self.supabase_configuration_error = str(error)
         self.dense_retriever = DenseRetriever(
             registry=IndexRegistry(cfg.vector_index_path),
             corpus_version=cfg.corpus_version,
@@ -80,11 +99,12 @@ class EvidencePipeline:
         knowledge_chunks: List[Chunk],
         local_chunks: List[Chunk],
         pdf_chunks: List[Chunk],
+        cloud_chunks: List[Chunk],
         trace: List[str],
     ) -> Tuple[List[Chunk], BackendStatus]:
         requested = self.settings.retrieval_backend
         backend = self.settings.normalized_retrieval_backend()
-        legacy_chunks = knowledge_chunks + local_chunks + pdf_chunks
+        legacy_chunks = knowledge_chunks + local_chunks + pdf_chunks + cloud_chunks
         if requested not in {"legacy", "dense", "hybrid"}:
             reason = f"不支持的 RETRIEVAL_BACKEND={requested}"
             trace.append(f"检索后端配置无效，已降级为 legacy：{reason}")
@@ -182,6 +202,7 @@ class EvidencePipeline:
         knowledge_chunks = []
         local_chunks = []
         pdf_chunks = []
+        cloud_chunks = []
         live_documents: List[Document] = []
         used_live = False
 
@@ -198,6 +219,17 @@ class EvidencePipeline:
                 )
             else:
                 trace.append("PDF 本地索引未建立，跳过 500 篇文献库")
+            if self.supabase_corpus:
+                try:
+                    cloud_chunks = self.supabase_corpus.search(
+                        spec.local_terms,
+                        top_k=self.settings.lexical_retrieve_k,
+                    )
+                    trace.append(f"Supabase 云端语料召回 {len(cloud_chunks)} 个 chunk")
+                except SupabaseStoreError as error:
+                    trace.append(f"Supabase 云端语料不可用，已使用本地兜底：{error}")
+            elif self.supabase_configuration_error:
+                trace.append(f"Supabase 云端语料未启用：{self.supabase_configuration_error}")
 
         static_chunks, retrieval_status = self._select_static_candidates(
             spec,
@@ -205,6 +237,7 @@ class EvidencePipeline:
             knowledge_chunks,
             local_chunks,
             pdf_chunks,
+            cloud_chunks,
             trace,
         )
         preliminary = legacy_rerank(

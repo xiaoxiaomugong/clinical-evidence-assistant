@@ -4,6 +4,7 @@ from .dense import DenseRetriever, SentenceTransformerEncoder
 from .hybrid import HybridRetriever, LocalCorpus, PrecomputedRetriever
 from .pdf_corpus import PdfCorpus
 from .pubmed import pubmed_search
+from .supabase import SupabaseCorpus, SupabaseDataAPI, SupabaseStoreError
 
 __all__ = [
     "DenseRetriever",
@@ -12,6 +13,9 @@ __all__ = [
     "PdfCorpus",
     "PrecomputedRetriever",
     "SentenceTransformerEncoder",
+    "SupabaseCorpus",
+    "SupabaseDataAPI",
+    "SupabaseStoreError",
     "pubmed_search",
     "europepmc_search",
     "clinicaltrials_search",

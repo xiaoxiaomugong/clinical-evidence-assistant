@@ -214,6 +214,10 @@ with st.sidebar:
         pdf_stats["documents"],
         f"{pdf_stats['full_text']} 篇全文可检索" if pdf_stats["documents"] else "尚未建立索引",
     )
+    if pipeline.supabase_corpus:
+        st.caption("☁ Supabase 云端证据库已启用；不可用时自动回退本地语料。")
+    elif pipeline.supabase_configuration_error:
+        st.caption(f"☁ Supabase 配置未生效：{pipeline.supabase_configuration_error}")
     st.markdown(
         '<p class="sidebar-note">覆盖：心脑血管病、血脂、高血压、糖尿病。默认不保存问题，不应输入可识别患者信息。</p>',
         unsafe_allow_html=True,
