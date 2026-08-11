@@ -5,11 +5,13 @@ import json
 import requests
 
 from config import Settings, settings
+from evidence_assistant.generate import COMMON_SAFETY_RULES
 
 
-BASELINE_PROMPT = """你是通用大模型基线。不得使用检索工具。回答临床问题，并按 JSON 输出：
-{"refused":false,"paragraphs":[{"text":"结论","citation_ids":[1]}],"references":[{"number":1,"title":"来源标题","url":"URL"}]}
-如果不知道，输出 refused=true。不要假装已核对来源。"""
+BASELINE_PROMPT = f"""你是通用大模型基线。不得使用检索工具或外部资料。
+{COMMON_SAFETY_RULES}
+公平评估约束：不得伪造已经核对的来源；由于本臂没有 evidence map，citation_ids 必须为空。
+只输出 JSON：{{"refused":false,"claims":[{{"text":"原子陈述","citation_ids":[],"claim_type":"effect","certainty":"low"}}],"limitations":["未使用外部检索，来源不可核验"],"found":[],"missing":[],"next_steps":[]}}。"""
 
 
 def call_baseline(question: str, cfg: Settings = settings) -> dict:

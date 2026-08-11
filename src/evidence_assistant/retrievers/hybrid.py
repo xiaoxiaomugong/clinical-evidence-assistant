@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Sequence
 
+from ..interfaces import BackendStatus, Retriever
 from ..schemas import Chunk, Document
 from ..text_utils import bm25_scores, cosine_scores, ranked_indices, rrf_fuse, split_text
 
@@ -65,3 +66,72 @@ class LocalCorpus:
             chunk.retrieval_score = 0.55 * fused[index] + 0.25 * bm25[index] + 0.20 * semantic[index]
             result.append(chunk)
         return result
+
+
+class PrecomputedRetriever:
+    """Expose an already ranked source list through the common retriever protocol."""
+
+    def __init__(self, chunks: Sequence[Chunk], backend_name: str = "legacy"):
+        self.chunks = list(chunks)
+        self.status = BackendStatus(requested=backend_name, actual=backend_name)
+
+    def search(self, query_plan, top_k: int) -> List[Chunk]:
+        del query_plan
+        return [Chunk(**{**chunk.__dict__}) for chunk in self.chunks[:top_k]]
+
+
+class HybridRetriever:
+    """RRF-fuse independently ranked lexical sources and a dense source."""
+
+    def __init__(self, retrievers: Sequence[Retriever], rrf_k: int = 60):
+        self.retrievers = list(retrievers)
+        self.rrf_k = rrf_k
+        self.status = BackendStatus(requested="hybrid", actual="hybrid")
+
+    def search(self, query_plan, top_k: int) -> List[Chunk]:
+        rankings = [retriever.search(query_plan, top_k) for retriever in self.retrievers]
+        chunks = {}
+        fused = {}
+        best_source_score = {}
+        dense_available = False
+        degradation_reasons = []
+
+        for retriever, ranking in zip(self.retrievers, rankings):
+            if retriever.status.actual == "dense" and not retriever.status.degraded:
+                dense_available = True
+            if retriever.status.degraded and retriever.status.reason:
+                degradation_reasons.append(retriever.status.reason)
+            for rank, chunk in enumerate(ranking, start=1):
+                chunks[chunk.id] = chunk
+                fused[chunk.id] = fused.get(chunk.id, 0.0) + 1.0 / (self.rrf_k + rank)
+                best_source_score[chunk.id] = max(
+                    best_source_score.get(chunk.id, 0.0), chunk.retrieval_score
+                )
+
+        maximum = max(fused.values(), default=0.0)
+        ordered = sorted(
+            chunks,
+            key=lambda chunk_id: (fused[chunk_id], best_source_score[chunk_id]),
+            reverse=True,
+        )
+        results: List[Chunk] = []
+        per_document = {}
+        for chunk_id in ordered:
+            chunk = chunks[chunk_id]
+            if per_document.get(chunk.doc_id, 0) >= 2:
+                continue
+            clone = Chunk(**{**chunk.__dict__})
+            rrf_score = fused[chunk_id] / maximum if maximum else 0.0
+            clone.retrieval_score = 0.70 * rrf_score + 0.30 * best_source_score[chunk_id]
+            results.append(clone)
+            per_document[chunk.doc_id] = per_document.get(chunk.doc_id, 0) + 1
+            if len(results) >= top_k:
+                break
+
+        self.status = BackendStatus(
+            requested="hybrid",
+            actual="hybrid" if dense_available else "legacy",
+            degraded=not dense_available,
+            reason="; ".join(dict.fromkeys(degradation_reasons))[:500],
+        )
+        return results

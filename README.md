@@ -6,9 +6,10 @@
 一个可离线演示、可接入实时医学检索与在线大模型的循证问答 MVP。项目实现了需求文档中的完整闭环：
 
 ```text
-临床问题 → 中英文查询改写 → 本地知识页 / 文献快照 + 实时 API
-         → 统一候选池 → 跨来源重排 → 前置拒答
-         → JSON 结构化生成 → 编号 / 存在性 / 支持性校验 → 后置拒答
+临床问题 → PHI / 诊疗边界预检 → 中英文查询计划 → 本地知识页 / 文献快照 + 实时 API
+         → 跨来源去重 → 统一重排 → 互补证据包 → 证据门控
+         → JSON 原子陈述生成 → 编号 / 存在性 / 支持性 / 数字一致性校验
+         → 删除无支持陈述与无效引用 → 后置拒答
          → 带证据等级和原始链接的回答
 ```
 
@@ -64,11 +65,47 @@ LLM_BASE_URL=https://api.openai.com/v1
 
 接口按 OpenAI-compatible Chat Completions JSON mode 调用。未配置或调用失败时使用抽取式生成器：它直接输出候选证据中的 claim/摘要，因此仍可校验、不会凭空补全。
 
+## 启用阶段 2 混合语义检索
+
+默认仍使用 `legacy + deterministic`，不会加载或下载模型。需要评估稠密召回和交叉编码器时，先安装可选依赖并在请求路径之外构建不可变索引：
+
+```bash
+pip install -e '.[retrieval]'
+export EMBEDDING_MODEL=/absolute/path/to/local-embedding-model
+export EMBEDDING_MODEL_REVISION=your-pinned-revision
+python3 scripts/build_dense_index.py
+```
+
+然后启用混合后端：
+
+```dotenv
+RETRIEVAL_BACKEND=hybrid
+RERANK_BACKEND=cross_encoder
+RERANK_MODEL=/absolute/path/to/local-rerank-model
+RERANK_MODEL_REVISION=your-pinned-revision
+MODEL_LOCAL_FILES_ONLY=true
+RETRIEVE_K=40
+RERANK_K=8
+GENERATION_K=5
+```
+
+应用不会在请求主路径自动建索引或下载模型。索引缺失、版本不匹配、模型加载失败或推理异常时会回退到 legacy/确定性重排，并在 UI、流水线结果和评估工件中标记实际后端与降级原因。对比不同后端：
+
+```bash
+python3 scripts/benchmark_retrieval.py \
+  --profile legacy:deterministic \
+  --profile hybrid:deterministic \
+  --profile hybrid:cross_encoder
+```
+
 ## 已实现的安全边界
 
 - 引用编号只能来自重排后 Top-K 可引用列表；越界编号立即判失败。
 - 知识页 PMID 带核对日期；运行脚本可再次向 NCBI 批量回查。
-- 结论和引用逐段做支持性校验；不支持的段落会触发降级或后置拒答。
+- 回答按原子陈述生成；数字必须出现在证据正文或元数据中。
+- 不支持的陈述和不可用引用会在进入 UI 前被物理移除；净化后无核心陈述则拒答。
+- 按 PMID/DOI/NCT 统计独立来源；来源不足、缺预期证据类型或冲突未解释时拒答。
+- 疑似 PHI 与个体化剂量、停药、换药问题会在检索和外部调用前阻断。
 - 明显超领域、虚构疗法、空候选或低相关问题在生成前拒答。
 - ClinicalTrials.gov 条目固定标为 `ClinicalTrial`，并保留 `status`，不会冒充已发表 RCT。
 - Europe PMC 预印本默认过滤；关闭过滤时明确标为 `preprint`。
@@ -108,21 +145,31 @@ python3 scripts/verify_pmids.py --strict
 python3 scripts/collect_corpus.py --target 200
 ```
 
+生成语料质量报告，并检查知识页可追溯字段：
+
+```bash
+python3 scripts/audit_corpus.py
+python3 scripts/lint_knowledge_pages.py --strict
+```
+
+当前质量报告写在 `data/corpus_quality.json`。它会明确报告领域分布、证据等级、全文/摘要兜底、重复主键和未通过的质量门禁，避免只用“500 篇”代表语料质量。
+
 ## 测试与评估
 
 ```bash
 pytest -q
 python3 scripts/smoke_test.py
 python3 eval/run_eval.py --mode hybrid
+python3 eval/run_compare.py
 ```
 
 固定测试集包含 15 题，覆盖事实型、指南型、争议型和 3 个应拒答问题。评估输出写入 `data/eval_results/`：
 
 - 检索层：Recall@8、MRR、nDCG@8
-- 生成层：引用准确率、关键点覆盖率、拒答正确率
+- 生成层：引用准确率、受支持陈述率、关键点覆盖率、拒答正确率
 - 明细：每题 Top-1、分数、延迟、结构化回答
 
-`eval/baseline.py` 提供禁用检索的纯 LLM 基线调用，使用同一模型、温度和 JSON 风格；需要配置 `LLM_API_KEY`。
+`eval/run_compare.py` 用锁定配置保存 Arm A 纯 LLM、Arm B 正常 RAG 与 Arm C 劣化 RAG 的全部原始工件。三臂使用同一安全规则、温度和原子陈述 JSON schema；Arm A 需要配置 `LLM_API_KEY`，未配置时会显式记为 skipped，不伪造基线结果。
 
 ## 目录
 
@@ -135,27 +182,31 @@ python3 eval/run_eval.py --mode hybrid
 │   ├── raw/local_corpus.json      # 离线文献快照
 │   ├── raw/                        # 演示快照；本地 PDF 索引不入库
 │   ├── cache/                     # 实时检索缓存
-│   └── corpus_version.json
+│   ├── corpus_version.json
+│   └── corpus_quality.json        # 机器可读的语料质量门禁
 ├── src/evidence_assistant/
 │   ├── pipeline.py                # 端到端编排
 │   ├── query_rewrite.py           # 领域识别与中英文扩展
 │   ├── knowledge_base.py          # 知识页召回
+│   ├── interfaces.py              # 检索/重排后端协议与状态
+│   ├── index_registry.py          # 版本化、不可变稠密索引
 │   ├── candidate_pool.py          # 合并、条目级去重
-│   ├── rerank.py                  # 跨来源统一评分
+│   ├── rerank.py                  # 跨来源统一评分与互补证据打包
+│   ├── rerankers/                 # 确定性/交叉编码器后端
 │   ├── generate.py                # JSON LLM / 离线抽取式生成
-│   ├── citation_check.py          # 三道引用校验
-│   ├── refusal.py                 # 前置与后置拒答
-│   └── retrievers/                # PubMed / Europe PMC / CT.gov / 本地 RRF
-├── eval/                          # 15 题测试集与评估脚本
-├── scripts/                       # 采集、PMID 核对、冒烟测试
+│   ├── citation_check.py          # 映射/存在/支持/数字校验与输出净化
+│   ├── refusal.py                 # 安全、证据与后置解释性拒答
+│   └── retrievers/                # 实时源、词法、稠密与混合 RRF
+├── eval/                          # 固定题集、回归评估与 A/B/C 比较
+├── scripts/                       # 采集、审计、知识页 lint、冒烟测试
 └── tests/                         # 核心行为单元测试
 ```
 
 ## 关键工程取舍
 
-规范建议的 bge-m3、Chroma 与 bge-reranker-v2-m3 对演示设备资源要求较高。本实现采用无模型下载的 BM25 + TF-IDF 余弦 + RRF，并在统一候选池上使用同一确定性评分器，保证 CPU/离线环境可复现。模块接口已隔离，后续可在不改 UI、校验和评估层的情况下替换为向量库和交叉编码器。
+默认实现继续采用无模型下载的 BM25 + TF-IDF 余弦 + RRF 与确定性评分器，保证 CPU/离线环境可复现。阶段 2 已加入可选的版本化稠密索引、分语言查询融合、混合 RRF 和交叉编码器适配器；具体模型不写死，由固定开发集在质量、最差主题表现和延迟之间选择。新后端通过配置启用，并保留无损回退路径。
 
-详细架构与替换点见 [docs/architecture.md](docs/architecture.md)，固定测试结果见 [docs/evaluation_report.md](docs/evaluation_report.md)，现场演示流程见 [docs/demo_script.md](docs/demo_script.md)。
+详细架构与替换点见 [docs/architecture.md](docs/architecture.md)，本轮实施状态与后续路线见 [docs/optimization_plan.md](docs/optimization_plan.md)，下一阶段的执行顺序、接口、验收门禁与 PR 拆分见 [docs/next_phase_development_plan.md](docs/next_phase_development_plan.md)，固定测试结果见 [docs/evaluation_report.md](docs/evaluation_report.md)，现场演示流程见 [docs/demo_script.md](docs/demo_script.md)。
 
 ## 开源许可与数据边界
 

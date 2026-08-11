@@ -59,13 +59,29 @@ def evaluate(mode: str, output_dir: Path) -> dict:
     for item in test_set:
         result = pipeline.run(item["question"], mode=mode, enable_live_apis=False)
         topics = set(item["relevant_topics"])
-        relevance = [2 if entry.topic in topics else 0 for entry in result.entries]
+        relevant_source_ids = set(item.get("relevant_source_ids", []))
+        seen_relevant_sources = set()
+        relevance = []
+        for entry in result.entries:
+            is_relevant = entry.doc_id in relevant_source_ids if relevant_source_ids else entry.topic in topics
+            if is_relevant and entry.doc_id not in seen_relevant_sources:
+                relevance.append(2)
+                seen_relevant_sources.add(entry.doc_id)
+            else:
+                relevance.append(0)
         should_answer = bool(item["should_answer"])
         refusal_correct = result.answer.refused != should_answer
         checked = result.citation_check.checked if result.citation_check else []
         citation_accuracy = (
-            sum(check.mapping_valid and check.support == "support" for check in checked) / len(checked)
-            if checked else (1.0 if result.answer.refused else 0.0)
+            sum(
+                check.mapping_valid
+                and check.support == "support"
+                and check.existence not in {"unverified", "not_checked"}
+                and check.numeric_consistent
+                for check in checked
+            )
+            / len(checked)
+            if checked else (None if result.answer.refused else 0.0)
         )
         answer_text = " ".join(paragraph.text for paragraph in result.answer.paragraphs)
         key_points = item.get("expected_key_points", [])
@@ -80,14 +96,35 @@ def evaluate(mode: str, output_dir: Path) -> dict:
             "should_answer": should_answer,
             "refused": result.answer.refused,
             "refusal_correct": refusal_correct,
-            "recall_at_8": recall_at_k(relevance, 8) if should_answer else None,
+            "recall_at_8": recall_at_k(
+                relevance,
+                8,
+                total_relevant=len(relevant_source_ids) if relevant_source_ids else None,
+            ) if should_answer else None,
             "mrr": reciprocal_rank(relevance) if should_answer else None,
-            "ndcg_at_8": ndcg_at_k(relevance, 8) if should_answer else None,
+            "ndcg_at_8": ndcg_at_k(
+                relevance,
+                8,
+                total_relevant=len(relevant_source_ids) if relevant_source_ids else None,
+            ) if should_answer else None,
             "citation_accuracy": citation_accuracy,
+            "supported_claim_rate": (
+                len(result.citation_check.supported_paragraphs)
+                / max(result.answer.original_paragraph_count, len(result.answer.paragraphs), 1)
+                if result.citation_check else None
+            ),
+            "independent_sources": (
+                result.evidence_gate.independent_source_count if result.evidence_gate else 0
+            ),
+            "evidence_roles": sorted({entry.evidence_role for entry in result.entries}),
             "key_point_coverage": coverage,
             "top_entry": result.entries[0].id if result.entries else "",
             "top_score": result.entries[0].score if result.entries else 0.0,
             "elapsed_ms": result.elapsed_ms,
+            "retrieval_backend": result.retrieval_backend,
+            "rerank_backend": result.rerank_backend,
+            "degraded": result.degraded,
+            "degradation_reasons": result.degradation_reasons,
             "answer": result.to_dict()["answer"],
         })
 
@@ -100,7 +137,12 @@ def evaluate(mode: str, output_dir: Path) -> dict:
         "recall_at_8": mean([row["recall_at_8"] for row in answerable]),
         "mrr": mean([row["mrr"] for row in answerable]),
         "ndcg_at_8": mean([row["ndcg_at_8"] for row in answerable]),
-        "citation_accuracy": mean([row["citation_accuracy"] for row in rows]),
+        "citation_accuracy": mean(
+            [row["citation_accuracy"] for row in rows if row["citation_accuracy"] is not None]
+        ),
+        "supported_claim_rate": mean(
+            [row["supported_claim_rate"] for row in rows if row["supported_claim_rate"] is not None]
+        ),
         "key_point_coverage": mean([row["key_point_coverage"] for row in answerable]),
         "refusal_accuracy": mean([float(row["refusal_correct"]) for row in rows]),
         "avg_elapsed_ms": mean([float(row["elapsed_ms"]) for row in rows]),

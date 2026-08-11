@@ -54,6 +54,42 @@ class PdfCorpus:
             "chunks": chunks,
         }
 
+    def all_chunks(self) -> List[Chunk]:
+        """Return indexable records; this is used only by the offline dense-index builder."""
+        if not self.path.exists():
+            return []
+        sql = """
+            SELECT c.id AS chunk_id, c.doc_id, c.text, c.page_number,
+                   d.title, d.journal, d.year, d.study_type, d.evidence_level,
+                   d.url, d.topic
+            FROM chunks AS c
+            JOIN documents AS d ON d.id = c.doc_id
+            ORDER BY c.id
+        """
+        with sqlite3.connect(str(self.path)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = list(connection.execute(sql))
+        chunks = []
+        for row in rows:
+            page = row["page_number"]
+            page_note = f" · PDF 第 {page} 页" if page else " · PubMed 摘要兜底"
+            chunks.append(
+                Chunk(
+                    id=row["chunk_id"],
+                    doc_id=row["doc_id"],
+                    source="pdf_collection",
+                    title=f"{row['title']}{page_note}",
+                    text=row["text"],
+                    evidence_level=row["evidence_level"] or "Other",
+                    url=row["url"],
+                    journal=row["journal"],
+                    year=row["year"],
+                    study_type=row["study_type"],
+                    topic=row["topic"] or "",
+                )
+            )
+        return chunks
+
     @staticmethod
     def _fts_query(terms: List[str]) -> str:
         joined = " ".join(terms)

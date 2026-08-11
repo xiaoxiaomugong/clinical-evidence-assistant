@@ -9,14 +9,20 @@ from config import Settings, settings
 from .schemas import Answer, AnswerParagraph, Entry
 
 
-SYSTEM_PROMPT = """你是临床证据助手。只基于提供的候选证据回答，不使用记忆补充事实。
-规则：
-1. 每个结论必须提供 citation_ids，编号只能来自可引用列表。
+COMMON_SAFETY_RULES = """规则：
+1. 不提供个体化诊断、处方、剂量、停药或换药建议。
 2. 禁止编造文献、期刊、证据等级、数值或结论。
-3. 证据不足时输出 refused=true。
-4. 区分指南推荐与研究提示，保留适用人群和例外。
-5. ClinicalTrial 若未完成，不得表述为已经证实疗效。
-6. 只输出 JSON：{"refused":false,"paragraphs":[{"text":"结论","citation_ids":[1]}],"limitations":["局限"]}。"""
+3. 区分指南推荐与研究提示，保留适用人群、例外、冲突与不确定性。
+4. ClinicalTrial 若未完成，不得表述为已经证实疗效。
+5. 证据不足时诚实拒答，并说明已找到什么、缺什么、下一步应补查什么。"""
+
+SYSTEM_PROMPT = f"""你是临床证据助手。只基于提供的候选证据回答，不使用记忆补充事实。
+{COMMON_SAFETY_RULES}
+证据纪律：
+1. claims 中每一项只能写一条可独立核验的事实性陈述。
+2. 每条 claim 必须提供 citation_ids，编号只能来自本次可引用列表。
+3. 没有编号能直接支持的事实、数字或建议不得写入回答。
+4. 只输出 JSON：{{"refused":false,"claims":[{{"text":"原子陈述","citation_ids":[1],"claim_type":"effect","certainty":"moderate"}}],"limitations":["局限"],"found":[],"missing":[],"next_steps":[]}}。"""
 
 
 def build_prompt(question: str, entries: List[Entry]) -> str:
@@ -33,13 +39,14 @@ def build_prompt(question: str, entries: List[Entry]) -> str:
             f"内容：{entry.text}\n"
             f"URL：{entry.url}"
         )
-    return f"{SYSTEM_PROMPT}\n\n用户问题：{question}\n\n可引用列表：\n" + "\n\n".join(evidence)
+    return f"用户问题：{question}\n\n可引用列表：\n" + "\n\n".join(evidence)
 
 
 def _parse_answer(payload: dict, generator: str) -> Answer:
     refused = bool(payload.get("refused", False))
     paragraphs = []
-    for item in payload.get("paragraphs", []):
+    raw_claims = payload.get("claims", payload.get("paragraphs", []))
+    for item in raw_claims:
         text = str(item.get("text", "")).strip()
         citation_ids = []
         for value in item.get("citation_ids", []):
@@ -48,13 +55,25 @@ def _parse_answer(payload: dict, generator: str) -> Answer:
             except (TypeError, ValueError):
                 continue
         if text:
-            paragraphs.append(AnswerParagraph(text=text, citation_ids=citation_ids))
+            paragraphs.append(
+                AnswerParagraph(
+                    text=text,
+                    citation_ids=citation_ids,
+                    claim_type=str(item.get("claim_type", "effect")),
+                    certainty=str(item.get("certainty", "moderate")),
+                )
+            )
     return Answer(
         refused=refused,
         paragraphs=paragraphs,
         reason=str(payload.get("reason", "")),
+        refusal_code=str(payload.get("refusal_code", "GENERATOR_REFUSAL" if refused else "")),
+        found=[str(item) for item in payload.get("found", [])],
+        missing=[str(item) for item in payload.get("missing", [])],
+        next_steps=[str(item) for item in payload.get("next_steps", [])],
         limitations=[str(item) for item in payload.get("limitations", [])],
         generator=generator,
+        original_paragraph_count=len(paragraphs),
     )
 
 
@@ -106,7 +125,13 @@ def extractive_answer(question: str, entries: List[Entry], max_paragraphs: int =
         "当前为离线可审计模式：回答直接摘取经核对的知识页或文献摘要，不进行超出证据的推断。",
         "内容仅供学习与研究，不构成诊疗建议；个体决策需由临床专业人员结合完整病史与检查完成。",
     ]
-    return Answer(refused=False, paragraphs=paragraphs, limitations=limitations, generator="extractive")
+    return Answer(
+        refused=False,
+        paragraphs=paragraphs,
+        limitations=limitations,
+        generator="extractive",
+        original_paragraph_count=len(paragraphs),
+    )
 
 
 def generate(question: str, entries: List[Entry], cfg: Settings = settings) -> Answer:

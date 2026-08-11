@@ -81,20 +81,48 @@ def set_example(question: str) -> None:
 
 
 def render_answer(result) -> None:
+    if result.degraded:
+        reasons = "；".join(result.degradation_reasons) or "可选模型后端不可用"
+        st.warning(
+            f"本次已安全降级：检索={result.retrieval_backend}，"
+            f"重排={result.rerank_backend}。{reasons}"
+        )
     if result.answer.refused:
         st.markdown('<span class="status-stop">证据不足 · 已安全拒答</span>', unsafe_allow_html=True)
         st.error(result.answer.reason)
+        if result.answer.found:
+            st.markdown("**已找到什么**")
+            for item in result.answer.found:
+                st.caption(f"— {item}")
+        if result.answer.missing:
+            st.markdown("**还缺什么**")
+            for item in result.answer.missing:
+                st.caption(f"— {item}")
+        if result.answer.next_steps:
+            st.markdown("**下一步可查什么**")
+            for item in result.answer.next_steps:
+                st.caption(f"— {item}")
+        if result.answer.refusal_code:
+            st.caption(f"拒答原因码：{result.answer.refusal_code}")
         if result.entries:
             st.caption("系统保留了检索轨迹供调试，但不会把低可靠度候选包装成临床结论。")
         return
 
     valid = result.citation_check and result.citation_check.valid
-    badge = '<span class="status-good">✓ 引用校验通过</span>' if valid else '<span class="status-warn">△ 部分证据需复核</span>'
+    sanitized = result.answer.removed_paragraph_count > 0 or (
+        result.citation_check and result.citation_check.removed_citation_count > 0
+    )
+    if valid:
+        badge = '<span class="status-good">✓ 引用校验通过</span>'
+    elif result.citation_check and result.citation_check.output_valid:
+        badge = '<span class="status-warn">✓ 风险陈述已净化</span>'
+    else:
+        badge = '<span class="status-warn">△ 部分证据需复核</span>'
     st.markdown(badge, unsafe_allow_html=True)
     st.markdown(
         f"""<div class="answer-panel">
         <h3>证据摘要</h3>
-        <div class="answer-meta">生成方式：{html.escape(result.answer.generator)} · {result.elapsed_ms} ms · 语料 {settings.corpus_version}</div>
+        <div class="answer-meta">生成方式：{html.escape(result.answer.generator)} · 检索：{html.escape(result.retrieval_backend)} · 重排：{html.escape(result.rerank_backend)} · {result.elapsed_ms} ms · 语料 {settings.corpus_version}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -108,6 +136,12 @@ def render_answer(result) -> None:
             else:
                 links.append(f"**[{citation_id}]**")
         st.markdown(f"{paragraph.text} {' '.join(links)}")
+        st.caption(f"陈述类型：{paragraph.claim_type} · 确定性：{paragraph.certainty}")
+    if sanitized:
+        st.caption(
+            f"输出净化：已删除 {result.answer.removed_paragraph_count} 条无支持陈述和 "
+            f"{result.citation_check.removed_citation_count if result.citation_check else 0} 个不可用引用。"
+        )
     if result.answer.limitations:
         st.markdown("**局限与边界**")
         for limitation in result.answer.limitations:
@@ -139,7 +173,10 @@ def render_evidence(result) -> None:
             st.markdown(f'<span class="evidence-level">{html.escape(levels)}</span>', unsafe_allow_html=True)
             st.caption(" · ".join(metadata))
             for entry in group:
-                st.markdown(f"**[{entry.citation_number}] · {entry.evidence_level} · 相关分 {entry.score:.2f}**")
+                st.markdown(
+                    f"**[{entry.citation_number}] · {entry.evidence_level} · "
+                    f"角色 {entry.evidence_role} · 相关分 {entry.score:.2f}**"
+                )
                 st.write(entry.text)
             if first.url:
                 st.link_button("打开原始来源 ↗", first.url)
@@ -161,6 +198,7 @@ with st.sidebar:
     )
     if live_apis:
         st.caption("实时源：PubMed · Europe PMC · ClinicalTrials.gov API v2")
+        st.caption("仅发送去标识化后的检索词；检测到疑似 PHI 时会在外部调用前阻断。")
         st.markdown(
             "[NCBI 免责声明与版权](https://www.ncbi.nlm.nih.gov/About/disclaimer.html)",
             help="PubMed 数据由 NCBI E-utilities 提供。",
@@ -198,7 +236,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="scope-strip">仅供教学与研究，不构成诊断或治疗建议　·　请勿输入姓名、病历号等隐私信息　·　证据不足时系统会明确拒答</div>',
+    '<div class="scope-strip">仅供教学与研究，不构成诊断或治疗建议　·　请勿输入姓名、病历号等隐私信息　·　证据不足时系统会明确拒答　·　紧急情况请立即联系当地急救或医疗机构</div>',
     unsafe_allow_html=True,
 )
 
@@ -243,4 +281,14 @@ if result:
                 "pico": result.query_spec.pico,
                 "api_queries": result.query_spec.api_queries,
                 "local_terms": result.query_spec.local_terms,
+                "expected_evidence_types": result.query_spec.expected_evidence_types,
+                "time_from": result.query_spec.time_from,
+                "time_to": result.query_spec.time_to,
+                "needs_latest": result.query_spec.needs_latest,
+                "personalized_treatment": result.query_spec.personalized_treatment,
+                "contains_phi": result.query_spec.contains_phi,
+                "retrieval_backend": result.retrieval_backend,
+                "rerank_backend": result.rerank_backend,
+                "degraded": result.degraded,
+                "degradation_reasons": result.degradation_reasons,
             })

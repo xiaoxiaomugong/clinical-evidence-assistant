@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-08-11T06:22:40.300403+00:00",
+  "corpus_version": "v3",
+  "bundled": {
+    "knowledge_pages": 5,
+    "knowledge_claims": 15,
+    "snapshot_documents": 10,
+    "snapshot_topics": {
+      "高血压": 2,
+      "血脂": 2,
+      "糖尿病": 1,
+      "脑卒中": 2,
+      "心脑血管": 3
+    },
+    "snapshot_evidence_levels": {
+      "Guideline": 4,
+      "RCT": 4,
+      "Meta-analysis": 1,
+      "Other": 1
+    }
+  },
+  "pdf_index": {
+    "available": true,
+    "documents": 500,
+    "unique_pmids": 500,
+    "unique_titles": 500,
+    "chunks": 18002,
+    "full_text": 480,
+    "abstract_fallback": 20,
+    "invalid_pdf": 19,
+    "year_range": [
+      2000,
+      2025
+    ],
+    "topics": {
+      "血脂": 307,
+      "糖尿病": 113,
+      "心脑血管": 44,
+      "其他": 23,
+      "高血压": 8,
+      "脑卒中": 5
+    },
+    "evidence_levels": {
+      "Other": 399,
+      "Review": 60,
+      "RCT": 32,
+      "Meta-analysis": 9
+    },
+    "extraction_status": {
+      "full_text": 480,
+      "abstract_fallback": 20
+    }
+  },
+  "quality_gates": {
+    "at_least_500_documents": true,
+    "unique_primary_ids": true,
+    "full_text_rate_at_least_90_percent": true,
+    "each_core_topic_at_least_20_documents": false,
+    "other_evidence_level_below_50_percent": false
+  },
+  "warnings": [
+    "核心主题分布不均，至少一个主题少于 20 篇。",
+    "超过一半文档的证据等级为 Other，需要补分类或人工抽查。",
+    "有 19 个文件未通过 PDF magic 检查并使用摘要兜底。"
+  ]
+}

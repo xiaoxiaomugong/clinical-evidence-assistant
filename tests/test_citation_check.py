@@ -5,11 +5,12 @@ from evidence_assistant.schemas import Answer, AnswerParagraph, Entry
 def entry(number=1):
     return Entry(
         id="e1",
-        doc_id="d1",
+        doc_id="pmid:12345678",
         source="pubmed_snapshot",
         title="Evidence",
         text="他汀治疗仅小幅增加肌肉症状风险。",
         evidence_level="Meta-analysis",
+        url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
         citation_number=number,
     )
 

@@ -63,6 +63,9 @@ class KnowledgeBase:
     def all_pages(self) -> Sequence[dict]:
         return tuple(self._pages.values())
 
+    def all_chunks(self) -> Sequence[Chunk]:
+        return tuple(Chunk(**{**chunk.__dict__}) for chunk in self._chunks)
+
     def search(self, terms: List[str], top_k: int = 8) -> List[Chunk]:
         query = " ".join(terms)
         searchable = [

@@ -9,6 +9,8 @@ class SourceCitation:
     type: str
     source: str
     pmid: Optional[str] = None
+    doi: Optional[str] = None
+    nct_id: Optional[str] = None
     chapter: Optional[str] = None
     url: Optional[str] = None
     verified_at: Optional[str] = None
@@ -21,6 +23,13 @@ class QuerySpec:
     api_queries: List[str]
     local_terms: List[str]
     domains: List[str] = field(default_factory=list)
+    expected_evidence_types: List[str] = field(default_factory=list)
+    time_from: Optional[int] = None
+    time_to: Optional[int] = None
+    needs_latest: bool = False
+    personalized_treatment: bool = False
+    contains_phi: bool = False
+    safe_query: str = ""
     out_of_scope: bool = False
 
 
@@ -77,12 +86,15 @@ class Entry:
     retrieval_score: float = 0.0
     score: float = 0.0
     citation_number: int = 0
+    evidence_role: str = "boundary"
 
 
 @dataclass
 class AnswerParagraph:
     text: str
     citation_ids: List[int]
+    claim_type: str = "effect"
+    certainty: str = "moderate"
 
 
 @dataclass
@@ -90,8 +102,14 @@ class Answer:
     refused: bool
     paragraphs: List[AnswerParagraph] = field(default_factory=list)
     reason: str = ""
+    refusal_code: str = ""
+    found: List[str] = field(default_factory=list)
+    missing: List[str] = field(default_factory=list)
+    next_steps: List[str] = field(default_factory=list)
     limitations: List[str] = field(default_factory=list)
     generator: str = "extractive"
+    original_paragraph_count: int = 0
+    removed_paragraph_count: int = 0
 
 
 @dataclass
@@ -103,6 +121,7 @@ class CheckedCitation:
     existence: str
     support: str
     reason: str
+    numeric_consistent: bool = True
 
 
 @dataclass
@@ -111,6 +130,21 @@ class CitationCheck:
     checked: List[CheckedCitation] = field(default_factory=list)
     failure_ratio: float = 0.0
     stripped_paragraphs: List[int] = field(default_factory=list)
+    supported_paragraphs: List[int] = field(default_factory=list)
+    removed_citation_count: int = 0
+    output_valid: bool = False
+
+
+@dataclass
+class EvidenceGateResult:
+    refused: bool
+    code: str = ""
+    reason: str = ""
+    found: List[str] = field(default_factory=list)
+    missing: List[str] = field(default_factory=list)
+    next_steps: List[str] = field(default_factory=list)
+    independent_source_count: int = 0
+    evidence_types: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -122,8 +156,14 @@ class PipelineResult:
     citation_check: Optional[CitationCheck]
     trace: List[str] = field(default_factory=list)
     query_spec: Optional[QuerySpec] = None
+    evidence_gate: Optional[EvidenceGateResult] = None
+    generation_entry_ids: List[str] = field(default_factory=list)
     used_live_api: bool = False
     elapsed_ms: int = 0
+    retrieval_backend: str = "not_run"
+    rerank_backend: str = "not_run"
+    degraded: bool = False
+    degradation_reasons: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

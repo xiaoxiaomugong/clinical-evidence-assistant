@@ -4,8 +4,10 @@ import math
 from typing import Iterable, List
 
 
-def recall_at_k(relevance: Iterable[int], k: int) -> float:
+def recall_at_k(relevance: Iterable[int], k: int, total_relevant: int = None) -> float:
     values = list(relevance)[:k]
+    if total_relevant is not None:
+        return min(1.0, sum(value > 0 for value in values) / max(total_relevant, 1))
     return 1.0 if any(value > 0 for value in values) else 0.0
 
 
@@ -16,10 +18,13 @@ def reciprocal_rank(relevance: Iterable[int]) -> float:
     return 0.0
 
 
-def ndcg_at_k(relevance: Iterable[int], k: int) -> float:
+def ndcg_at_k(relevance: Iterable[int], k: int, total_relevant: int = None) -> float:
     values = list(relevance)[:k]
     dcg = sum((2 ** value - 1) / math.log2(index + 2) for index, value in enumerate(values))
-    ideal = sorted(values, reverse=True)
+    if total_relevant is None:
+        ideal = sorted(values, reverse=True)
+    else:
+        ideal = [2] * min(total_relevant, k) + [0] * max(0, k - total_relevant)
     idcg = sum((2 ** value - 1) / math.log2(index + 2) for index, value in enumerate(ideal))
     return dcg / idcg if idcg else 0.0
 

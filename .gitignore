@@ -18,3 +18,4 @@ data/raw/pdf_collection.sqlite3
 data/raw/pdf_collection.sqlite3-*
 data/raw/pdf_collection_pubmed.json
 data/raw/pdf_collection.report.json
+data/indexes/
