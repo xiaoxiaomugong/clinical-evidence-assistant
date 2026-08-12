@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import List
 
-from config import Settings, settings
+from ..config import Settings, settings
 from ..schemas import Document, QuerySpec
 from .common import cache_path, get_with_retry, load_cache, save_cache, utc_now
 

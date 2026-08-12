@@ -3,7 +3,7 @@
 [![CI](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-一个可离线演示、可接入实时医学检索与在线大模型的循证问答 MVP。项目实现了需求文档中的完整闭环：
+一个可离线演示、可作为 MCP/Agent Tool、也可接入实时医学检索与在线大模型的循证问答 MVP。项目实现了需求文档中的完整闭环：
 
 ```text
 临床问题 → PHI / 诊疗边界预检 → 中英文查询计划 → 本地语料 / Supabase + 实时 API
@@ -13,7 +13,7 @@
          → 带证据等级和原始链接的回答
 ```
 
-项目默认采用“离线优先”：不配置任何密钥也可以运行 UI、完成带引用问答、触发拒答并跑完整测试集。配置实时 API 或 LLM 后会自动增强，失败时降级到本地可信语料。
+项目默认采用“离线优先”：不配置任何密钥也可以运行 Web UI 或 MCP tool、完成带引用问答、触发拒答并跑完整测试集。配置实时 API 或 LLM 后会自动增强，失败时降级到本地可信语料。
 
 > 仅供教学与研究，不构成诊断或治疗建议。请勿输入可识别患者隐私信息。
 
@@ -21,6 +21,7 @@
 
 | 能力 | 默认行为 | 可选增强 |
 |---|---|---|
+| 使用入口 | Streamlit Web UI、Python Tool API、MCP stdio 服务 | 接入任意支持 MCP 的 agent host |
 | 证据来源 | 5 个知识页、10 条精选文献快照，可完全离线运行 | 本地 PDF 全文、Supabase 云端证据库、PubMed / Europe PMC / ClinicalTrials.gov 实时检索 |
 | 检索与重排 | BM25、TF-IDF、RRF 和确定性重排 | 版本化稠密索引、混合召回、交叉编码器 |
 | 回答生成 | 从证据中抽取原子陈述并逐条校验 | OpenAI-compatible JSON 生成 |
@@ -28,7 +29,7 @@
 
 所有在线能力都采用显式配置并保留本地回退路径；不配置任何密钥时，核心问答、测试和评估仍可运行。
 
-## 立即运行
+## 立即运行 Web UI
 
 推荐 Python 3.11；代码兼容 Python 3.9+。
 
@@ -47,6 +48,65 @@ streamlit run app.py
 make install
 make run
 ```
+
+## 作为 Agent Tool 使用（MCP）
+
+项目同时提供一个标准 MCP stdio 服务，原 Streamlit UI 和 `EvidencePipeline` 调用方式保持不变。
+MCP 运行时要求 Python 3.10+，推荐继续使用 Python 3.11：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+make install-tool
+# 等价于：python3 -m pip install -e '.[mcp]'
+```
+
+安装后，任何支持 MCP 的 agent host 都可以用下面的配置启动本地工具。`command` 建议填写
+虚拟环境中可执行文件的绝对路径，因此不依赖 host 的工作目录：
+
+```json
+{
+  "mcpServers": {
+    "clinical-evidence": {
+      "command": "/absolute/path/to/.venv/bin/clinical-evidence-mcp"
+    }
+  }
+}
+```
+
+也可以直接从源码启动服务，便于本地调试：
+
+```bash
+make run-tool
+```
+
+服务暴露一个 `query_clinical_evidence` tool：
+
+| 参数 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `question` | string | 必填 | 去标识化的临床学习或科研问题，最长 4000 字符 |
+| `mode` | string | `hybrid` | `hybrid`、`knowledge` 或 `rag` |
+| `enable_live_apis` | boolean / null | `null` | `null` 使用服务端配置；`true` 显式启用三个实时检索源 |
+
+返回值是可直接供 agent 推理的结构化 JSON，包含 `status`、原子陈述、编号引用、完整证据条目、
+证据门控、引用校验、实际检索/重排后端、降级原因与检索轨迹。`status=refused` 时，agent 应保留
+拒答边界，不应自行补写临床结论。MCP 使用 stdio，stdout 专用于协议消息。
+
+也可在不依赖 MCP 框架时直接复用同一个 Tool API：
+
+```python
+from evidence_assistant import query_clinical_evidence
+
+result = query_clinical_evidence(
+    "降压药应早上服用还是睡前服用？",
+    mode="hybrid",
+    enable_live_apis=False,
+)
+```
+
+已安装的包会携带知识页和精选文献快照，所以不依赖仓库工作目录也能离线运行。大型 PDF 索引
+不会打入安装包；如需挂载现有索引，可设置 `PDF_INDEX_PATH=/absolute/path/to/index.sqlite3`。
+安装态默认使用系统临时缓存；生产环境可用 `EVIDENCE_ASSISTANT_CACHE_DIR` 指定持久目录。
 
 ## 三种检索模式
 
@@ -218,6 +278,9 @@ python3 eval/run_eval.py --mode hybrid
 python3 eval/run_compare.py
 ```
 
+GitHub Actions 在 Python 3.9 和 3.11 上验证核心离线流程，并在 Python 3.11 任务中额外安装
+`mcp` extra、发现并调用 MCP tool。MCP 集成测试在未安装该可选依赖的本地环境中会自动跳过。
+
 若本机已安装 Docker 与 Supabase CLI，还可以在隔离的本地数据库中验证迁移、RLS、原子替换、
 回滚和暂存清理：
 
@@ -251,6 +314,9 @@ supabase db lint --local --schema public --fail-on error
 │   └── corpus_quality.json        # 机器可读的语料质量门禁
 ├── src/evidence_assistant/
 │   ├── pipeline.py                # 端到端编排
+│   ├── tool.py                    # 框架无关的 Agent Tool 适配层
+│   ├── mcp_server.py              # MCP stdio 服务入口
+│   ├── config.py                  # 源码/安装包均可用的运行配置
 │   ├── query_rewrite.py           # 领域识别与中英文扩展
 │   ├── knowledge_base.py          # 知识页召回
 │   ├── interfaces.py              # 检索/重排后端协议与状态

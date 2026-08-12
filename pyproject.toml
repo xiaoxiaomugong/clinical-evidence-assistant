@@ -19,10 +19,14 @@ dependencies = [
 [project.optional-dependencies]
 ui = ["streamlit>=1.32,<2"]
 dev = ["pytest>=8,<9"]
+mcp = ["mcp>=2,<3"]
 retrieval = [
   "numpy>=1.24",
   "sentence-transformers>=3.0",
 ]
+
+[project.scripts]
+clinical-evidence-mcp = "evidence_assistant.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/xiaoxiaomugong/clinical-evidence-assistant"
@@ -31,6 +35,17 @@ Issues = "https://github.com/xiaoxiaomugong/clinical-evidence-assistant/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/clinical-evidence-assistant/data" = [
+  "data/corpus_version.json",
+]
+"share/clinical-evidence-assistant/data/knowledge_pages" = [
+  "data/knowledge_pages/*.json",
+]
+"share/clinical-evidence-assistant/data/raw" = [
+  "data/raw/local_corpus.json",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

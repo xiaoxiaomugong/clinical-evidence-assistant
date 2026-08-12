@@ -5,7 +5,7 @@ from typing import List
 
 import requests
 
-from config import Settings, settings
+from .config import Settings, settings
 from .schemas import Answer, AnswerParagraph, Entry
 
 

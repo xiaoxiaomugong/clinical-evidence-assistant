@@ -1,10 +1,16 @@
-.PHONY: install run test smoke eval verify-pmids index-pdfs
+.PHONY: install install-tool run run-tool test smoke eval verify-pmids index-pdfs
 
 install:
 	python3 -m pip install -r requirements.txt
 
+install-tool:
+	python3 -m pip install -e '.[mcp]'
+
 run:
 	PYTHONPATH=src:. streamlit run app.py
+
+run-tool:
+	PYTHONPATH=src:. python3 -m evidence_assistant.mcp_server
 
 test:
 	PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:. pytest -q

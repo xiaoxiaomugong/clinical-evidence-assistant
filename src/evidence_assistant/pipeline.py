@@ -5,7 +5,7 @@ from typing import List, Optional, Set, Tuple
 
 import requests
 
-from config import Settings, settings
+from .config import Settings, settings
 from .candidate_pool import build
 from .citation_check import sanitize_answer, verify
 from .generate import generate
