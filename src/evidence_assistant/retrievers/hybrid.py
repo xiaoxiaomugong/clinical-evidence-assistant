@@ -41,7 +41,12 @@ class LocalCorpus:
             return []
         with self.path.open("r", encoding="utf-8") as handle:
             records = json.load(handle)
-        return [Document(**record, retrieved_at="offline-snapshot") for record in records]
+        documents = []
+        for record in records:
+            normalized = dict(record)
+            normalized["retrieved_at"] = normalized.get("retrieved_at") or "offline-snapshot"
+            documents.append(Document(**normalized))
+        return documents
 
     @property
     def size(self) -> int:

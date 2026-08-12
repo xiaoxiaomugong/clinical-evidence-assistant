@@ -6,7 +6,7 @@
 一个可离线演示、可接入实时医学检索与在线大模型的循证问答 MVP。项目实现了需求文档中的完整闭环：
 
 ```text
-临床问题 → PHI / 诊疗边界预检 → 中英文查询计划 → 本地知识页 / 文献快照 + 实时 API
+临床问题 → PHI / 诊疗边界预检 → 中英文查询计划 → 本地语料 / Supabase + 实时 API
          → 跨来源去重 → 统一重排 → 互补证据包 → 证据门控
          → JSON 原子陈述生成 → 编号 / 存在性 / 支持性 / 数字一致性校验
          → 删除无支持陈述与无效引用 → 后置拒答
@@ -16,6 +16,17 @@
 项目默认采用“离线优先”：不配置任何密钥也可以运行 UI、完成带引用问答、触发拒答并跑完整测试集。配置实时 API 或 LLM 后会自动增强，失败时降级到本地可信语料。
 
 > 仅供教学与研究，不构成诊断或治疗建议。请勿输入可识别患者隐私信息。
+
+## 当前能力
+
+| 能力 | 默认行为 | 可选增强 |
+|---|---|---|
+| 证据来源 | 5 个知识页、10 条精选文献快照，可完全离线运行 | 本地 PDF 全文、Supabase 云端证据库、PubMed / Europe PMC / ClinicalTrials.gov 实时检索 |
+| 检索与重排 | BM25、TF-IDF、RRF 和确定性重排 | 版本化稠密索引、混合召回、交叉编码器 |
+| 回答生成 | 从证据中抽取原子陈述并逐条校验 | OpenAI-compatible JSON 生成 |
+| 质量与安全 | PHI/诊疗边界预检、证据门控、引用与数字一致性校验、后置拒答 | 语料审计、固定评估集、三臂对比评估 |
+
+所有在线能力都采用显式配置并保留本地回退路径；不配置任何密钥时，核心问答、测试和评估仍可运行。
 
 ## 立即运行
 
@@ -147,15 +158,39 @@ python3 scripts/collect_corpus.py --target 200
 
 ## Supabase 云端证据库
 
-仓库包含可直接部署的 Supabase 迁移、显式 Data API 授权、RLS 只读策略、全文检索
-RPC 和增量 upsert 脚本。应用仍保持离线优先：启用云端后会把 Supabase 候选加入统一
-重排，连接失败则自动回退知识页、JSON 快照和 SQLite PDF 索引。
+仓库包含可直接部署的 Supabase 迁移、显式 Data API 授权、RLS 只读策略、全文检索 RPC，
+以及按来源原子替换的同步工具。应用读取时只需要 publishable key；写入、发布和中止同步仅允许
+后端 secret/service-role key。`anon` 与普通已登录用户不能访问暂存表或发布 RPC。
+
+每次推送先把文档和 chunk 分批写入后端暂存表，再由单个 PostgreSQL 事务发布：
+
+```text
+本地来源 → staging（批量上传）→ publish RPC（校验并原子替换）→ 可检索证据表
+                                  └─ 失败：事务回滚，原有可见版本不变
+```
+
+新版本发布时会停用该来源中已删除的文档，并删除其旧 chunk；中途失败则清理暂存数据并把
+本次 ingestion 标为失败。应用仍保持离线优先：启用云端后会把 Supabase 词法候选并入统一
+重排池，连接失败则自动回退知识页、JSON 快照和 SQLite PDF 索引。
+
+先部署迁移并配置环境变量：
+
+```bash
+npx --yes supabase@2.109.1 link --project-ref YOUR_PROJECT_REF
+npx --yes supabase@2.109.1 db push --dry-run
+npx --yes supabase@2.109.1 db push
+
+cp .env.example .env
+# 填写 SUPABASE_URL、SUPABASE_PUBLISHABLE_KEY、SUPABASE_SECRET_KEY
+```
+
+然后预览或执行同步：
 
 ```bash
 # 不联网检查将要同步的数据量
 python3 scripts/sync_supabase.py push --source snapshot --dry-run
 
-# 配置 SUPABASE_URL / SUPABASE_SECRET_KEY 后执行幂等更新
+# 使用 SUPABASE_SECRET_KEY 执行按来源原子替换
 python3 scripts/sync_supabase.py push --source snapshot
 
 # 从云端生成新的离线快照
@@ -163,7 +198,7 @@ python3 scripts/sync_supabase.py pull
 ```
 
 本地 PDF 默认仅同步题录/摘要；只有确认拥有相应权利时才可显式加入全文。完整建库、
-密钥和安全说明见 [docs/supabase.md](docs/supabase.md)。
+密钥轮换、安全边界和故障恢复说明见 [docs/supabase.md](docs/supabase.md)。
 
 生成语料质量报告，并检查知识页可追溯字段：
 
@@ -181,6 +216,16 @@ pytest -q
 python3 scripts/smoke_test.py
 python3 eval/run_eval.py --mode hybrid
 python3 eval/run_compare.py
+```
+
+若本机已安装 Docker 与 Supabase CLI，还可以在隔离的本地数据库中验证迁移、RLS、原子替换、
+回滚和暂存清理：
+
+```bash
+supabase start
+supabase db reset --local --no-seed
+supabase test db --local supabase/tests/atomic_evidence_publish_test.sql
+supabase db lint --local --schema public --fail-on error
 ```
 
 固定测试集包含 15 题，覆盖事实型、指南型、争议型和 3 个应拒答问题。评估输出写入 `data/eval_results/`：
@@ -216,9 +261,15 @@ python3 eval/run_compare.py
 │   ├── generate.py                # JSON LLM / 离线抽取式生成
 │   ├── citation_check.py          # 映射/存在/支持/数字校验与输出净化
 │   ├── refusal.py                 # 安全、证据与后置解释性拒答
-│   └── retrievers/                # 实时源、词法、稠密与混合 RRF
+│   └── retrievers/                # 实时源、Supabase、词法、稠密与混合 RRF
+├── docs/
+│   └── supabase.md                # 云端建库、同步、安全与恢复手册
 ├── eval/                          # 固定题集、回归评估与 A/B/C 比较
-├── scripts/                       # 采集、审计、知识页 lint、冒烟测试
+├── scripts/
+│   └── sync_supabase.py           # 云端来源 dry-run、原子推送与离线拉取
+├── supabase/
+│   ├── migrations/                # 表、索引、RLS、检索与发布 RPC
+│   └── tests/                     # pgTAP 数据库集成测试
 └── tests/                         # 核心行为单元测试
 ```
 
@@ -232,4 +283,6 @@ python3 eval/run_compare.py
 
 源代码以 [MIT License](LICENSE) 发布。仓库不授予任何第三方论文、摘要或数据库内容的再分发权；使用者须自行确认其本地语料及外部 API 数据符合对应来源的许可和使用条款。
 
-请勿提交 `.env`、API Key、可识别患者信息或无权公开的临床资料。该工具仅供教学与研究，不是医疗器械，也不替代专业医疗判断。
+请勿提交 `.env`、API Key、可识别患者信息或无权公开的临床资料。`SUPABASE_SECRET_KEY`
+只能在可信后端或本地同步环境中使用，不能放入浏览器、移动端包或公开日志。该工具仅供教学与研究，
+不是医疗器械，也不替代专业医疗判断。

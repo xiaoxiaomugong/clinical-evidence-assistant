@@ -5,6 +5,7 @@ import pytest
 from config import settings
 from evidence_assistant.candidate_pool import research_family_id
 from evidence_assistant.index_registry import DenseIndexError, IndexRegistry
+from evidence_assistant.interfaces import BackendStatus
 from evidence_assistant.pipeline import EvidencePipeline
 from evidence_assistant.query_rewrite import rewrite
 from evidence_assistant.rerankers import CrossEncoderReranker
@@ -73,6 +74,40 @@ def test_dense_retriever_fuses_separate_query_variants(tmp_path):
     assert all(item.source == "pubmed_snapshot" for item in results)
     assert retriever.status.actual == "dense"
     assert not retriever.status.degraded
+
+
+class ReadyDenseRetriever:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.status = BackendStatus(requested="dense", actual="dense")
+
+    def search(self, spec, top_k, allowed_sources):
+        del spec, top_k, allowed_sources
+        return list(self.chunks)
+
+
+def test_dense_backend_keeps_supabase_candidates_for_unified_rerank():
+    pipeline = EvidencePipeline.__new__(EvidencePipeline)
+    pipeline.settings = replace(settings, retrieval_backend="dense", retrieve_k=2)
+    dense = chunk("pmid:1:chunk:1", score=0.9)
+    duplicate_cloud = chunk("pmid:1:chunk:1", source="pubmed_snapshot", score=0.7)
+    cloud_only = chunk("pmid:2:cloud:1", source="pubmed_snapshot", score=0.8)
+    pipeline.dense_retriever = ReadyDenseRetriever([dense])
+    trace = []
+
+    candidates, status = pipeline._select_static_candidates(
+        rewrite("statin evidence"),
+        "rag",
+        [],
+        [],
+        [],
+        [duplicate_cloud, cloud_only],
+        trace,
+    )
+
+    assert [candidate.id for candidate in candidates] == [dense.id, cloud_only.id]
+    assert status.actual == "dense"
+    assert any("Supabase" in message and "统一重排" in message for message in trace)
 
 
 def test_hybrid_retriever_rrf_fuses_and_deduplicates():

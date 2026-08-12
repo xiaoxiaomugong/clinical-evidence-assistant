@@ -142,24 +142,63 @@ class SupabaseDataAPI:
             last_id = str(page[-1]["id"])
         return rows
 
-    def upsert_rows(self, table: str, rows: Iterable[dict], batch_size: int = 200) -> int:
+    def upsert_rows(
+        self,
+        table: str,
+        rows: Iterable[dict],
+        batch_size: int = 200,
+        conflict_columns: str = "id",
+    ) -> int:
         records = list(rows)
         size = min(max(int(batch_size), 1), 500)
         for offset in range(0, len(records), size):
             self._request(
                 "POST",
                 table,
-                params={"on_conflict": "id"},
+                params={"on_conflict": conflict_columns},
                 payload=records[offset : offset + size],
                 prefer="resolution=merge-duplicates,return=minimal",
             )
         return len(records)
 
-    def start_ingestion(self, source_id: str, metadata: Optional[dict] = None) -> str:
+    def stage_rows(
+        self,
+        table: str,
+        run_id: str,
+        rows: Iterable[dict],
+        batch_size: int = 200,
+    ) -> int:
+        allowed_tables = {
+            "evidence_document_staging",
+            "evidence_chunk_staging",
+        }
+        if table not in allowed_tables:
+            raise ValueError(f"Unsupported evidence staging table: {table}")
+        staged = [
+            {"run_id": run_id, "id": str(row["id"]), "payload": row}
+            for row in rows
+        ]
+        return self.upsert_rows(
+            table,
+            staged,
+            batch_size=batch_size,
+            conflict_columns="run_id,id",
+        )
+
+    def start_ingestion(
+        self,
+        source_id: str,
+        metadata: Optional[dict] = None,
+        records_seen: int = 0,
+    ) -> str:
         rows, _ = self._request(
             "POST",
             "ingestion_runs",
-            payload={"source_id": source_id, "metadata": metadata or {}},
+            payload={
+                "source_id": source_id,
+                "metadata": metadata or {},
+                "records_seen": max(0, int(records_seen)),
+            },
             prefer="return=representation",
         )
         if not rows or not rows[0].get("id"):
@@ -174,6 +213,22 @@ class SupabaseDataAPI:
             payload=fields,
             prefer="return=minimal",
         )
+
+    def publish_ingestion(self, run_id: str) -> dict:
+        result = self.rpc("publish_evidence_ingestion", {"p_run_id": run_id})
+        if not isinstance(result, dict):
+            raise SupabaseStoreError("Supabase publish RPC returned an invalid result")
+        return result
+
+    def abort_ingestion(self, run_id: str, error_message: str) -> bool:
+        result = self.rpc(
+            "abort_evidence_ingestion",
+            {
+                "p_run_id": run_id,
+                "p_error_message": error_message[:500],
+            },
+        )
+        return bool(result)
 
 
 class SupabaseCorpus:

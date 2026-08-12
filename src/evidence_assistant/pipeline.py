@@ -133,7 +133,21 @@ class EvidencePipeline:
             return legacy_chunks, status
         trace.append(f"稠密索引召回 {len(dense_chunks)} 个 chunk")
         if backend == "dense":
-            return dense_chunks[: self.settings.retrieve_k], BackendStatus(
+            # Supabase is queried independently of the local dense index. Keep
+            # its lexical candidates in the same downstream rerank pool while
+            # preserving dense candidates when both stores contain a chunk.
+            merged = list(dense_chunks[: self.settings.retrieve_k])
+            seen = {chunk.id for chunk in merged}
+            for chunk in cloud_chunks:
+                if chunk.id in seen:
+                    continue
+                merged.append(chunk)
+                seen.add(chunk.id)
+            if cloud_chunks:
+                trace.append(
+                    f"稠密/Supabase 合并后送入统一重排 {len(merged)} 个静态候选"
+                )
+            return merged, BackendStatus(
                 requested="dense", actual="dense"
             )
 

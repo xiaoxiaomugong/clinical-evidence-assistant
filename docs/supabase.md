@@ -11,6 +11,8 @@
 | `evidence_documents` | 文献规范主键、摘要、来源标识、证据等级、更新时间和内容哈希 | 匿名/登录用户只读活动记录 |
 | `evidence_chunks` | 摘要或有授权全文的可检索 chunk | 匿名/登录用户只读活动文档的 chunk |
 | `ingestion_runs` | 每次同步的状态、数量、错误和审计元数据 | 仅后端 secret key |
+| `evidence_*_staging` | 分批上传中的文献/chunk 暂存区 | 仅后端 secret key |
+| `publish_evidence_ingestion` | 在一个数据库事务中替换指定来源并清理旧数据 | 仅后端 secret key |
 | `search_evidence_chunks` | PostgreSQL FTS 云端检索，最多返回 100 条 | 匿名/登录用户可执行，受 RLS 约束 |
 
 迁移文件位于 `supabase/migrations/`。所有 `public` 表都显式启用 RLS；
@@ -30,6 +32,17 @@ npx --yes supabase@2.109.1 db push --linked
 也可以通过已连接的 Supabase 管理工具应用同一迁移。迁移后应运行 Security
 Advisor 和 Performance Advisor，并分别用 publishable key 验证只读检索、用
 secret key 验证同步写入。
+
+本地安装 Docker Desktop 或 Podman 后，可用仓库内的 pgTAP 用例验证原子替换、
+失败回滚和权限边界：
+
+```bash
+supabase start
+supabase db reset --local --no-seed
+supabase test db --local supabase/tests/atomic_evidence_publish_test.sql
+supabase db lint --local --schema public --fail-on error
+supabase db advisors --local --type all --fail-on error
+```
 
 ## 应用配置
 
@@ -55,7 +68,8 @@ SUPABASE_TIMEOUT=15
 python3 scripts/sync_supabase.py push --source snapshot --dry-run
 ```
 
-上传内置文献快照；重复执行会按规范 `id` 更新，不会生成重复行：
+上传内置文献快照；脚本先分批写入不可公开读取的暂存表，再由单次 RPC 原子替换
+`pubmed_snapshot` 来源：
 
 ```bash
 python3 scripts/sync_supabase.py push --source snapshot
@@ -72,6 +86,10 @@ python3 scripts/sync_supabase.py push --source pdf
 ```bash
 python3 scripts/sync_supabase.py push --source pdf --include-pdf-full-text
 ```
+
+每次成功发布都会删除该来源中本次快照未包含的旧 chunk，并把本次快照未包含的旧文献
+标记为 `is_active=false`。因此从全文模式切回默认 PDF 同步会原子删除旧全文 chunk；
+任一暂存批次或发布步骤失败时，当前公开版本保持不变。
 
 下载云端活动文档，生成可离线使用的 JSON 快照：
 

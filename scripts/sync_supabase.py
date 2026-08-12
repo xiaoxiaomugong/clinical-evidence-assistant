@@ -234,32 +234,42 @@ def upload(
     chunk_rows = list(chunks)
     run_id = api.start_ingestion(
         source_id,
-        {"uploader": "scripts/sync_supabase.py", "schema_version": "1"},
+        {
+            "uploader": "scripts/sync_supabase.py",
+            "schema_version": "2",
+            "expected_chunks": len(chunk_rows),
+        },
+        records_seen=len(document_rows),
     )
     try:
-        api.upsert_rows("evidence_documents", document_rows, batch_size=batch_size)
-        api.upsert_rows("evidence_chunks", chunk_rows, batch_size=batch_size)
-        api.finish_ingestion(
+        api.stage_rows(
+            "evidence_document_staging",
             run_id,
-            status="succeeded",
-            completed_at=utc_now(),
-            records_seen=len(document_rows),
-            records_upserted=len(document_rows),
-            chunks_upserted=len(chunk_rows),
+            document_rows,
+            batch_size=batch_size,
         )
+        api.stage_rows(
+            "evidence_chunk_staging",
+            run_id,
+            chunk_rows,
+            batch_size=batch_size,
+        )
+        published = api.publish_ingestion(run_id)
     except Exception as error:
         try:
-            api.finish_ingestion(
+            api.abort_ingestion(
                 run_id,
-                status="failed",
-                completed_at=utc_now(),
-                records_seen=len(document_rows),
-                records_failed=len(document_rows),
-                error_message=f"{type(error).__name__}: {str(error)[:400]}",
+                f"{type(error).__name__}: {str(error)[:400]}",
             )
-        finally:
-            raise
-    print(f"Uploaded {len(document_rows)} documents and {len(chunk_rows)} chunks ({source_id})")
+        except Exception:
+            # The original failure is more useful. Any rows left behind are in
+            # backend-only staging tables and cannot become searchable.
+            pass
+        raise
+    print(
+        f"Published {published['documents']} documents and {published['chunks']} "
+        f"chunks atomically ({source_id})"
+    )
 
 
 def write_snapshot(api: SupabaseDataAPI, output: Path) -> None:
@@ -279,7 +289,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    push = subparsers.add_parser("push", help="Upsert local evidence into Supabase")
+    push = subparsers.add_parser(
+        "push", help="Atomically replace a Supabase evidence source"
+    )
     push.add_argument("--source", choices=("snapshot", "pdf", "all"), default="snapshot")
     push.add_argument("--batch-size", type=int, default=200)
     push.add_argument("--dry-run", action="store_true")
