@@ -29,6 +29,39 @@
 
 所有在线能力都采用显式配置并保留本地回退路径；不配置任何密钥时，核心问答、测试和评估仍可运行。
 
+## 从 GitHub Releases 安装
+
+每个正式版本提供轻量离线桌面安装包和 Python 分发包：
+
+| 平台 | Release 文件 | 安装方式 |
+|---|---|---|
+| Windows x64 | `Clinical-Evidence-Assistant-*-windows-x64-setup.exe` | 双击安装，无需预装 Python |
+| macOS Apple Silicon | `Clinical-Evidence-Assistant-*-macos-arm64.dmg` | 拖入 Applications |
+| macOS Intel | `Clinical-Evidence-Assistant-*-macos-x86_64.dmg` | 拖入 Applications |
+| Ubuntu/Debian x64 | `clinical-evidence-assistant_*_amd64.deb` | `sudo apt install ./clinical-evidence-assistant_*_amd64.deb` |
+| Python/MCP | `.whl` | 适合开发者和 agent host |
+
+桌面版内置 Python、Web UI、核心问答和小型离线语料，首次运行不需要 API key。它只监听本机
+`127.0.0.1`，并自动在浏览器打开界面。大型 PDF 全文、生成的 SQLite 索引、稠密模型和密钥不进入
+安装包；高级用户仍可通过 `PDF_INDEX_PATH`、模型路径及用户配置文件挂载。
+
+Release 同时提供 `SHA256SUMS.txt`。在项目尚未配置正式签名证书时，macOS 或 Windows 可能显示
+“未知开发者”提示；用于公开分发前应配置代码签名和 macOS notarization，详见
+[发布手册](docs/releasing.md)。
+
+也可从 wheel 安装 UI：
+
+```bash
+python3 -m pip install 'clinical-evidence-assistant[ui]'
+clinical-evidence-ui
+```
+
+只验证安装资源和离线问答而不启动服务：
+
+```bash
+clinical-evidence-ui --check
+```
+
 ## 立即运行 Web UI
 
 推荐 Python 3.11；代码兼容 Python 3.9+。
@@ -107,6 +140,12 @@ result = query_clinical_evidence(
 已安装的包会携带知识页和精选文献快照，所以不依赖仓库工作目录也能离线运行。大型 PDF 索引
 不会打入安装包；如需挂载现有索引，可设置 `PDF_INDEX_PATH=/absolute/path/to/index.sqlite3`。
 安装态默认使用系统临时缓存；生产环境可用 `EVIDENCE_ASSISTANT_CACHE_DIR` 指定持久目录。
+
+如需从 PDF 新建索引，再安装 PDF 可选依赖：
+
+```bash
+python3 -m pip install 'clinical-evidence-assistant[pdf]'
+```
 
 ## 三种检索模式
 

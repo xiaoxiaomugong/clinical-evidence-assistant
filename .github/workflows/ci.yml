@@ -33,3 +33,9 @@ jobs:
           ENABLE_LIVE_APIS: "false"
           LLM_API_KEY: ""
         run: python scripts/smoke_test.py
+      - name: Check installed UI entry point
+        if: matrix.python-version == '3.11'
+        env:
+          ENABLE_LIVE_APIS: "false"
+          LLM_API_KEY: ""
+        run: clinical-evidence-ui --check

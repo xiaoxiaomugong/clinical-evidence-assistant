@@ -1,0 +1,18 @@
+include app.py
+include LICENSE
+include README.md
+include docs/releasing.md
+recursive-include data/knowledge_pages *.json
+include data/corpus_version.json
+include data/raw/local_corpus.json
+recursive-include packaging *.spec *.iss *.sh *.svg
+recursive-include src *.py
+recursive-include tests *.py
+prune 500-collection
+prune data/cache
+prune data/eval_results
+prune data/indexes
+exclude data/raw/pdf_collection.sqlite3
+exclude data/raw/pdf_collection.sqlite3-*
+exclude data/raw/pdf_collection_pubmed.json
+exclude data/raw/pdf_collection.report.json

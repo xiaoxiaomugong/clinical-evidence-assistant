@@ -1,0 +1,178 @@
+name: Build release packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  python-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Build wheel and source archive
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Verify the wheel in a clean environment
+        run: |
+          python -m venv /tmp/cea-wheel-check
+          /tmp/cea-wheel-check/bin/python -m pip install "$(find dist -name '*.whl')[ui,mcp]"
+          ENABLE_LIVE_APIS=false LLM_API_KEY= /tmp/cea-wheel-check/bin/clinical-evidence-ui --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-packages
+          path: dist/*
+          if-no-files-found: error
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: desktop-windows-x64
+          - os: macos-15
+            artifact: desktop-macos-arm64
+          - os: macos-15-intel
+            artifact: desktop-macos-x64
+          - os: ubuntu-22.04
+            artifact: desktop-linux-amd64
+    runs-on: ${{ matrix.os }}
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [[ "${version}" != "${project_version}" ]]; then
+              echo "Tag version ${version} does not match pyproject.toml ${project_version}." >&2
+              exit 1
+            fi
+          else
+            version="${project_version}"
+          fi
+          echo "value=${version}" >> "${GITHUB_OUTPUT}"
+      - name: Install desktop build dependencies
+        run: python -m pip install --upgrade ".[ui]" "pyinstaller>=6.10,<7"
+      - name: Build frozen application
+        env:
+          CEA_VERSION: ${{ steps.version.outputs.value }}
+        run: pyinstaller --clean --noconfirm packaging/clinical_evidence_assistant.spec
+
+      - name: Smoke-test Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& "dist\ClinicalEvidenceAssistant\ClinicalEvidenceAssistant.exe" --server-check'
+      - name: Sign Windows executable when credentials are available
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("windows-signing.pfx", [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          & signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f windows-signing.pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD "dist\ClinicalEvidenceAssistant\ClinicalEvidenceAssistant.exe"
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.value }}" "packaging\windows-installer.iss"
+      - name: Sign Windows installer when credentials are available
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          & signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f windows-signing.pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD (Get-ChildItem release\*.exe).FullName
+
+      - name: Smoke-test macOS application
+        if: runner.os == 'macOS'
+        run: '"dist/Clinical Evidence Assistant.app/Contents/MacOS/ClinicalEvidenceAssistant" --server-check'
+      - name: Sign macOS application when credentials are available
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
+        run: |
+          echo "${MACOS_CERTIFICATE}" | base64 -D > signing-certificate.p12
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" build.keychain
+          security import signing-certificate.p12 -k build.keychain -P "${MACOS_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" build.keychain
+          identity="$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(.*\)"/\1/p' | head -n 1)"
+          codesign --deep --force --options runtime --timestamp --sign "${identity}" "dist/Clinical Evidence Assistant.app"
+          codesign --verify --deep --strict --verbose=2 "dist/Clinical Evidence Assistant.app"
+      - name: Ad-hoc sign macOS application without credentials
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE == ''
+        run: codesign --deep --force --sign - "dist/Clinical Evidence Assistant.app"
+      - name: Build macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release/dmg-root
+          cp -R "dist/Clinical Evidence Assistant.app" release/dmg-root/
+          ln -s /Applications release/dmg-root/Applications
+          arch_name="$(uname -m)"
+          hdiutil create -volname "Clinical Evidence Assistant" -srcfolder release/dmg-root -ov -format UDZO "release/Clinical-Evidence-Assistant-${{ steps.version.outputs.value }}-macos-${arch_name}.dmg"
+          rm -rf release/dmg-root
+      - name: Notarize macOS disk image when credentials are available
+        if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != '' && env.APPLE_ID != ''
+        run: |
+          dmg="$(find release -name '*.dmg' -print -quit)"
+          xcrun notarytool submit "${dmg}" --apple-id "${APPLE_ID}" --team-id "${APPLE_TEAM_ID}" --password "${APPLE_APP_PASSWORD}" --wait
+          xcrun stapler staple "${dmg}"
+
+      - name: Smoke-test Linux application
+        if: runner.os == 'Linux'
+        run: dist/ClinicalEvidenceAssistant/ClinicalEvidenceAssistant --server-check
+      - name: Build Linux package
+        if: runner.os == 'Linux'
+        run: bash packaging/build-deb.sh "${{ steps.version.outputs.value }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.deb
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [python-package, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release/* --repo "${GITHUB_REPOSITORY}" --verify-tag --generate-notes

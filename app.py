@@ -13,7 +13,7 @@ if str(SRC) not in sys.path:
 
 import streamlit as st
 
-from config import settings
+from evidence_assistant.config import settings
 from evidence_assistant.pipeline import EvidencePipeline
 
 

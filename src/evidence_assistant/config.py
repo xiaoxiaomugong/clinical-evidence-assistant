@@ -30,7 +30,8 @@ def _discover_root() -> tuple[Path, bool]:
 
 ROOT_DIR, RUNNING_FROM_SOURCE = _discover_root()
 if load_dotenv:
-    load_dotenv(ROOT_DIR / ".env")
+    env_file = os.getenv("EVIDENCE_ASSISTANT_ENV_FILE", "").strip()
+    load_dotenv(Path(env_file).expanduser() if env_file else ROOT_DIR / ".env")
 
 
 def _as_bool(value: str, default: bool = False) -> bool:
