@@ -3,12 +3,13 @@
 [![CI](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-一个可离线演示、可作为 MCP/Agent Tool、也可接入实时医学检索与在线大模型的循证问答 MVP。项目实现了需求文档中的完整闭环：
+一个可离线演示、可作为 MCP/Agent Tool、也可接入实时医学检索与在线大模型的循证问答 MVP。当前问答流程：
 
 ```text
 临床问题 → PHI / 诊疗边界预检 → 中英文查询计划 → 本地语料 / Supabase + 实时 API
-         → 跨来源去重 → 统一重排 → 互补证据包 → 证据门控
-         → JSON 原子陈述生成 → 编号 / 存在性 / 支持性 / 数字一致性校验
+         → 保留不同原文与段落、文档内去重 → 统一重排 → Top-8 证据门控
+         → 互补 Top-5 生成证据包 → 独立来源 / 必要类型复核
+         → JSON 原子陈述生成 → 实际生成包引用 / 支持性 / 数字与单位 / 字面否定校验
          → 删除无支持陈述与无效引用 → 后置拒答
          → 带证据等级和原始链接的回答
 ```
@@ -17,6 +18,17 @@
 
 > 仅供教学与研究，不构成诊断或治疗建议。请勿输入可识别患者隐私信息。
 
+## P0 优化进展（2026-09-23）
+
+原文候选保留、生成证据包复核、输出安全及隔离评测工具已落地。**P0 尚未整体完成：Top-8 多样性实验、新语料和独立临床评审仍有未通过或未完成的门禁。**
+
+- **默认策略已更新**：候选池使用 `source_preserving`，按文档身份与完整文本哈希去重，移除旧的池内研究家族截断，减少原文被知识页条目挤出的情况。Top-8 选择仍为 `legacy`。
+- **安全复核已启用**：实际用于生成的 Top-5 再次检查独立来源和必要证据类型；引用校验限定在该证据包内，增加单位与字面否定检查，并阻止 PHI 阻断响应回显原始题干。
+- **旧题回归有改善**：当前默认策略在内置语料 C0 / 挂载原本地 PDF 索引 C1 上，旧 Recall@8 分别从 75.00% 提升至 95.83% / 91.67%。这来自同一套 15 题的工程回归，不代表独立临床验证。
+- **工具与数据状态分开记录**：隔离 runner、阶段追踪、分级评分和语料候选审计工具已实现；实验策略与候选语料未替换默认 Top-8 策略或原索引。
+
+详见下文 [P0 优化与隔离回归](#p0-优化与隔离回归)及 [P0 实施报告](docs/optimization_p0_implementation_report.md)。
+
 ## 当前能力
 
 | 能力 | 默认行为 | 可选增强 |
@@ -24,8 +36,9 @@
 | 使用入口 | Streamlit Web UI、Python Tool API、MCP stdio 服务 | 接入任意支持 MCP 的 agent host |
 | 证据来源 | 5 个知识页、10 条精选文献快照，可完全离线运行 | 本地 PDF 全文、Supabase 云端证据库、PubMed / Europe PMC / ClinicalTrials.gov 实时检索 |
 | 检索与重排 | BM25、TF-IDF、RRF 和确定性重排 | 版本化稠密索引、混合召回、交叉编码器 |
+| 候选与证据包 | 原文候选保留、来源身份归并、实际 Top-5 复核 | Top-8 文档多样性实验（未默认启用） |
 | 回答生成 | 从证据中抽取原子陈述并逐条校验 | OpenAI-compatible JSON 生成 |
-| 质量与安全 | PHI/诊疗边界预检、证据门控、引用与数字一致性校验、后置拒答 | 语料审计、固定评估集、三臂对比评估 |
+| 质量与安全 | PHI/诊疗边界预检、证据门控、引用/数字/单位校验、后置拒答 | 语料门禁、隔离回归、本地阶段追踪、三臂对比评估 |
 
 所有在线能力都采用显式配置并保留本地回退路径；不配置任何密钥时，核心问答、测试和评估仍可运行。
 
@@ -215,6 +228,7 @@ python3 scripts/benchmark_retrieval.py \
 - 回答按原子陈述生成；数字及显式单位必须与证据一致，并检查字面否定反转。这些规则不能代替医学语义审查。
 - 不支持的陈述和不可用引用会在进入 UI 前被物理移除；净化后无核心陈述则拒答。
 - 按 PMID/DOI/NCT 统计独立来源；来源不足、缺预期证据类型或冲突未解释时拒答。
+- 页面身份与研究身份分开处理；重复论文表示和已知研究别名归并，身份不明的条目不虚增来源数。自动规则不能替代人工研究家族核验。
 - 疑似 PHI 与个体化剂量、停药、换药问题会在检索和外部调用前阻断。
 - 模型生成的无引用辅助字段使用应用固定文案；PHI 阻断响应不回传原始题干。
 - 明显超领域、虚构疗法、空候选或低相关问题在生成前拒答。
@@ -319,7 +333,12 @@ python3 eval/run_compare.py
 ```
 
 GitHub Actions 在 Python 3.9 和 3.11 上验证核心离线流程，并在 Python 3.11 任务中额外安装
-`mcp` extra、发现并调用 MCP tool。MCP 集成测试在未安装该可选依赖的本地环境中会自动跳过。
+`mcp` extra、通过真实 stdio 子进程发现并调用 MCP tool，检查 stdout 协议及拒答行为。该 CI 步骤用
+`CLINICAL_REQUIRE_MCP=1` 将运行时缺失视为失败；未安装 MCP 的普通本地环境则跳过相关测试。
+
+2026-09-23 本地验证记录：核心测试 **179 通过、2 跳过**（Python 3.9.6），另在 Python 3.13.13 / MCP 2.0.0
+环境完成 **2 项 MCP 测试**；离线 smoke、桌面入口 `--check` 与知识页 lint 通过。核心测试有 5 条既有
+SWIG 弃用警告；该记录不代表远端 CI、真实浏览器交互或多平台安装包均已验证。
 
 若本机已安装 Docker 与 Supabase CLI，还可以在隔离的本地数据库中验证迁移、RLS、原子替换、
 回滚和暂存清理：
@@ -334,29 +353,82 @@ supabase db lint --local --schema public --fail-on error
 固定测试集包含 15 题，覆盖事实型、指南型、争议型和 3 个应拒答问题。评估输出写入 `data/eval_results/`：
 
 - 检索层：Recall@8、MRR、nDCG@8
-- 生成层：引用准确率、受支持陈述率、关键点覆盖率、拒答正确率
+- 生成层：引用与陈述支持规则通过率、词项覆盖率、旧应答/拒答标签一致率（工程代理指标）
 - 明细：每题 Top-1、分数、延迟、结构化回答
 
 `eval/run_compare.py` 对 Arm A 纯 LLM、Arm B 正常 RAG 与 Arm C 劣化 RAG 统一执行输入预检，分别记录执行状态和应答行为。Arm A 需要配置 `LLM_API_KEY`，未配置时记为 skipped，质量指标为 N/A。C 仅标为 `legacy_degraded_smoke`，不代表已完成指定证据扰动实验。净化前输出由显式启用的本地 recorder 保存，不加入公开 Tool/MCP 响应。
 
 ### P0 优化与隔离回归
 
-候选保留与 Top-8 选择使用独立配置。原文保留通过工程门禁后，默认设为 `CANDIDATE_POOL_POLICY=source_preserving`；可独立回滚为 `legacy`。`TOP8_SELECTION_POLICY` 默认仍为 `legacy`，`document_diverse` 因覆盖回归未通过而保留为实验项。两者回滚不关闭生成证据包安全复核。实施范围、实测门禁和未完成项见 [P0 实施报告](docs/optimization_p0_implementation_report.md)，设计依据见 [P0 优化方案](docs/optimization_p0_plan.md)。
+#### 默认配置与回滚
 
-下面的维护命令需要本地保留的原 P0 冻结工件，输出目录必须不存在：
+```dotenv
+CANDIDATE_POOL_POLICY=source_preserving
+TOP8_SELECTION_POLICY=legacy
+RETRIEVAL_BACKEND=legacy
+RERANK_BACKEND=deterministic
+```
+
+上述为代码默认值；已有环境变量的显式配置仍优先。候选保留与 Top-8 选择可独立配置：将
+`CANDIDATE_POOL_POLICY` 设为 `legacy` 可回滚候选策略，不会关闭来源身份安全、实际生成包复核或输出安全规则。
+`TOP8_SELECTION_POLICY=document_diverse` 仅用于实验，其覆盖回归尚未通过，不建议作为默认配置。
+
+#### 旧题集上的变化
+
+以下摘自 2026-09-23 冻结运行 `p0-final-20260923-v3`。B1 为隔离 worker 中的历史行为基线，G1 为当前默认策略对应配置；代码默认值已在 C0/C1 共 30 个题目—配置组合上与 G1 核对一致。
+
+| 语料配置 | 旧 Recall@8：B1 → G1 | 旧 nDCG@8：B1 → G1 | 词项覆盖：B1 → G1 | 应答 / 拒答：B1 → G1 |
+|---|---|---|---|---|
+| C0：5 个知识页 + 10 条快照 | 75.00% → 95.83%（18/24 → 23/24） | 77.56% → 89.85% | 81.67% → 83.75% | 12/3 → 12/3 |
+| C1：C0 + 原 500 篇本地 PDF 索引 | 75.00% → 91.67%（18/24 → 22/24） | 75.47% → 85.63% | 80.00% → 82.08% | 12/3 → 12/3 |
+
+每个配置仍只有 15 道旧题：12 道应答题、3 道应拒答题。Recall 分母为 24 个来源标签，不能解释为
+24 项独立研究；重复运行也不增加独立样本量。旧标签、`eval/metrics.py` 和安全阈值均保持不变。
+词项覆盖及规则通过率不能作为医学正确率，独立分级指标和正式置信区间仍为 N/A。
+
+同轮离线抽取式性能测试中，G1 并发 1 的全链路 P95 为 C0 **7.62 ms**、C1 **68.45 ms**，对应 B1 为
+6.89 / 66.63 ms；每档预热 10 次、180 次请求且均实际应答。计时不含全文诊断落盘开销，电源模式、系统争用
+和 OS 缓存未受控，不作为在线 LLM 或生产服务延迟承诺。完整并发 1/4 数据与测量限制见 [实施报告](docs/optimization_p0_implementation_report.md)。
+
+#### 隔离复现与实验臂
+
+普通克隆可运行上方测试与内置 15 题评估。**完整 P0 对比另需本机保留的历史冻结工件**，包括原始语料快照，
+C1 还需要冻结 PDF 索引；它们和原始评测记录均不随 GitHub 仓库分发。输出目录必须不存在，且不能位于基线目录内：
 
 ```bash
-python -m eval.run_p0 --output data/eval_runs/p0-new-run \
+python3 -m eval.run_p0 \
+  --baseline /absolute/path/to/historical-p0-run \
+  --output data/eval_runs/p0-new-run \
   --profiles C0 C1 --arms B0 B1 R1 I1 G1 R2 --performance --trials 180
 ```
 
 runner 在干净子进程中禁用 live、云端和 LLM，冻结代码/数据，执行两次确定性回归及网络拒绝自检；报告包含阶段候选、原始与净化后陈述映射、逐题状态、耗时和哈希。历史 B0 无完整阶段 recorder。并发性能使用轻量计时，不把保存全文的诊断开销混入主性能结果。
 
-`I1` 是审查后增加的身份计数诊断臂：R1 仅修候选，I1 再修来源身份，G1 再加生成包复核，R2 最后加 Top-8 多样性。历史规则只在隔离 worker 中复现，不是产品配置。性能报告同时列实际应答次数；请求数达到 100 不代表应答样本已足够。
+| 实验臂 | 用途 |
+|---|---|
+| B0 / B1 | 冻结历史代码 / 历史行为加新 recorder，用于核对基线一致性 |
+| R1 | B1 加原文候选保留 |
+| I1 | R1 加来源身份修复，用于单独分析身份计数影响 |
+| G1 | I1 加实际 Top-5 门控，对应当前默认策略 |
+| R2 | G1 加 Top-8 文档多样性，仅实验启用 |
+| D1 / RD | 分别在 B1 / G1 上更换独立候选语料；须指定 `--profiles C1 --index ...` |
 
-旧 15 题与 `eval/metrics.py` 保持冻结，得分属于工程代理指标。可通过 `--dataset`、`--qrels` 接入独立数据集；新分级评分器会保留未标注候选的不可比较状态。未建立独立评审集时，不据此宣称临床质量达标。
+历史身份规则和生成包旁路只在隔离 worker 中复现，产品配置没有安全旁路。性能报告同时列出请求数与实际应答数，
+不以拒答快路径代替应答性能。网络拒绝自检覆盖 Python socket/DNS 和子进程审计，不等同于 OS 抓包。
 
-语料候选使用独立 manifest/索引路径。`scripts/audit_corpus.py --check` 会在质量门禁失败时返回非零退出码，默认报告模式仍允许检查未达标语料。不要将候选索引覆盖原始 P0 索引。
+新评分器 `eval/metrics_v2.py` 支持 0–3 分级、完整 IDCG、重复条目零增益、未标注候选 N/A 和题组 bootstrap；
+通过 `--dataset`、`--qrels` 接入独立标注。旧题未具备独立分级 qrels，不能仅切换评分器就宣称正式质量达标。
+
+#### 语料治理与剩余工作
+
+`scripts/prepare_corpus_candidate.py` 在独立目录生成候选索引与来源台账；`scripts/audit_corpus.py --check`
+会在质量门禁失败时返回非零退出码，默认报告模式允许检查未达标语料。候选 manifest 和索引应使用独立路径，不覆盖原 P0 索引。
+
+- **Top-8 实验未默认启用**：R2 的 C1 词项覆盖从 B1 的 80.00% 降至 77.92%；C0 并发 1 P95 另触发超过 20% 的性能警报，尚待复核。q008 的原文排序问题仍需在独立开发集诊断。
+- **新语料未替换原库**：v2 候选保留 500 条原始记录，其中 468 篇可用（368 全文、100 实质摘要），其余 32 条仅有可确认标题；文献量、全文率、核心主题覆盖和 Other 比例四项门禁失败，132 个 PDF 仍待严格题名核验。
+- **独立临床评审未完成**：需明确评测负责人、两名独立循证评审及仲裁者，建立 48 题（16 开发 / 32 盲测），再扩至 200 题。当前没有正式临床质量或严重安全错误门禁通过的结论。
+
+完整决策、失败项和工件索引见 [P0 实施报告](docs/optimization_p0_implementation_report.md)；其原始工件链接指向被 Git 忽略的本地 `data/eval_runs/`，公开克隆中不可访问。
 
 ## 目录
 
@@ -380,17 +452,30 @@ runner 在干净子进程中禁用 live、云端和 LLM，冻结代码/数据，
 │   ├── knowledge_base.py          # 知识页召回
 │   ├── interfaces.py              # 检索/重排后端协议与状态
 │   ├── index_registry.py          # 版本化、不可变稠密索引
-│   ├── candidate_pool.py          # 合并、条目级去重
+│   ├── candidate_pool.py          # 原文保留、文档去重与来源身份
 │   ├── rerank.py                  # 跨来源统一评分与互补证据打包
 │   ├── rerankers/                 # 确定性/交叉编码器后端
 │   ├── generate.py                # JSON LLM / 离线抽取式生成
 │   ├── citation_check.py          # 映射/存在/支持/数字校验与输出净化
+│   ├── observability.py           # 可选的阶段耗时与候选追踪
+│   ├── output_policy.py           # 生成器辅助字段净化与固定文案
 │   ├── refusal.py                 # 安全、证据与后置解释性拒答
 │   └── retrievers/                # 实时源、Supabase、词法、稠密与混合 RRF
 ├── docs/
+│   ├── optimization_p0_implementation_report.md # P0 交付、实测结果与剩余门禁
+│   ├── optimization_p0_plan.md    # P0 优化方案
+│   ├── evaluation_p0_report.md    # 优化前的冻结基线报告
+│   ├── evaluation_plan.md         # 独立评测与验收方案
 │   └── supabase.md                # 云端建库、同步、安全与恢复手册
-├── eval/                          # 固定题集、回归评估与 A/B/C 比较
+├── eval/
+│   ├── run_p0.py                  # P0 冻结运行、实验臂及性能编排
+│   ├── offline_runner.py          # 隔离 worker 与网络拒绝自检
+│   ├── run_record.py              # 本地诊断、陈述映射与工件记录
+│   ├── metrics_v2.py              # 独立分级指标与 N/A 语义
+│   └── run_compare.py             # A/B/C 比较与执行状态记录
 ├── scripts/
+│   ├── prepare_corpus_candidate.py # 独立候选语料、来源台账与索引
+│   ├── audit_corpus.py            # 语料审计与可失败的质量门禁
 │   └── sync_supabase.py           # 云端来源 dry-run、原子推送与离线拉取
 ├── supabase/
 │   ├── migrations/                # 表、索引、RLS、检索与发布 RPC
@@ -402,7 +487,11 @@ runner 在干净子进程中禁用 live、云端和 LLM，冻结代码/数据，
 
 默认实现继续采用无模型下载的 BM25 + TF-IDF 余弦 + RRF 与确定性评分器，保证 CPU/离线环境可复现。阶段 2 已加入可选的版本化稠密索引、分语言查询融合、混合 RRF 和交叉编码器适配器；具体模型不写死，由固定开发集在质量、最差主题表现和延迟之间选择。新后端通过配置启用，并保留无损回退路径。
 
-详细架构与替换点见 [docs/architecture.md](docs/architecture.md)，本轮实施状态与后续路线见 [docs/optimization_plan.md](docs/optimization_plan.md)，下一阶段的执行顺序、接口、验收门禁与 PR 拆分见 [docs/next_phase_development_plan.md](docs/next_phase_development_plan.md)，固定测试结果见 [docs/evaluation_report.md](docs/evaluation_report.md)，现场演示流程见 [docs/demo_script.md](docs/demo_script.md)。
+当前交付状态以 [P0 实施报告](docs/optimization_p0_implementation_report.md)为准，设计依据见
+[P0 优化方案](docs/optimization_p0_plan.md)，独立评测要求见 [评测方案](docs/evaluation_plan.md)。
+详细架构与替换点见 [架构说明](docs/architecture.md)，现场演示见 [演示流程](docs/demo_script.md)。
+早期 [优化路线](docs/optimization_plan.md)、[阶段 2 开发计划](docs/next_phase_development_plan.md)及
+[历史评估报告](docs/evaluation_report.md)保留用于追溯，不能替代最新 P0 验证结果。
 
 ## 开源许可与数据边界
 
