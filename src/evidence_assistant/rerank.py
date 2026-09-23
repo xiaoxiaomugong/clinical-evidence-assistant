@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .candidate_pool import research_family_id
+from .candidate_pool import document_identity, reliable_family_id, research_family_id
 from .schemas import Entry
 from .text_utils import bm25_scores, cosine_scores, term_overlap
 
@@ -31,6 +31,44 @@ def assign_citation_numbers(entries: List[Entry]) -> List[Entry]:
     for number, entry in enumerate(entries, start=1):
         entry.citation_number = number
     return entries
+
+
+def select_top_k(entries: List[Entry], top_k: int = 8, policy: str = "legacy", on_decision=None) -> List[Entry]:
+    """Select from the scored pool without increasing the retrieval budget."""
+    if policy not in {"legacy", "document_diverse"}:
+        raise ValueError(f"Unsupported Top-8 selection policy: {policy}")
+    if top_k < 0:
+        raise ValueError("top_k must be nonnegative")
+    ordered = entries if policy == "legacy" else sorted(entries, key=lambda e: (-e.score, document_identity(e), e.id))
+    selected, documents, families = [], set(), {}
+    for rank, entry in enumerate(ordered, 1):
+        doc, family = document_identity(entry), reliable_family_id(entry)
+        reason = "retained"
+        if len(selected) >= top_k:
+            reason = "top_k_limit"
+        elif policy == "document_diverse" and doc in documents:
+            reason = "document_limit"
+        elif policy == "document_diverse" and family and families.get(family, 0) >= 2:
+            reason = "family_limit"
+        else:
+            selected.append(entry)
+            documents.add(doc)
+            if family:
+                families[family] = families.get(family, 0) + 1
+        if on_decision:
+            on_decision({"entry_id": entry.id, "doc_id": entry.doc_id, "document_identity": doc,
+                         "family_id": family, "rank_before_selection": rank, "reason": reason})
+    return assign_citation_numbers(selected)
+
+
+def score_details(question: str, entries: List[Entry]) -> dict:
+    searchable = [f"{e.title} {e.topic} {e.text}" for e in entries]
+    lexical = bm25_scores(question, searchable)
+    cosine = cosine_scores(question, searchable)
+    return {e.id: {"bm25": lexical[i], "tfidf_cosine": cosine[i], "retrieval_score": e.retrieval_score,
+                   "source_prior": 0.04 if e.source == "knowledge_page" else 0.0,
+                   "evidence_prior": EVIDENCE_PRIOR.get(e.evidence_level, 0.0)}
+            for i, e in enumerate(entries)}
 
 
 def rerank(question: str, entries: List[Entry], top_k: int = 8) -> List[Entry]:

@@ -80,6 +80,8 @@ class Settings:
     )
     corpus_version: str = os.getenv("CORPUS_VERSION", "v3").strip()
     retrieval_backend: str = os.getenv("RETRIEVAL_BACKEND", "legacy").strip().lower()
+    candidate_pool_policy: str = os.getenv("CANDIDATE_POOL_POLICY", "source_preserving").strip().lower()
+    top8_selection_policy: str = os.getenv("TOP8_SELECTION_POLICY", "legacy").strip().lower()
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "").strip()
     embedding_model_revision: str = os.getenv("EMBEDDING_MODEL_REVISION", "main").strip()
     vector_index_path: Path = _as_path(

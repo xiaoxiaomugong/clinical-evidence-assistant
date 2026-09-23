@@ -6,6 +6,8 @@ import requests
 
 from config import Settings, settings
 from evidence_assistant.generate import COMMON_SAFETY_RULES
+from evidence_assistant.query_rewrite import rewrite
+from evidence_assistant.refusal import assess_safety
 
 
 BASELINE_PROMPT = f"""你是通用大模型基线。不得使用检索工具或外部资料。
@@ -15,6 +17,13 @@ BASELINE_PROMPT = f"""你是通用大模型基线。不得使用检索工具或�
 
 
 def call_baseline(question: str, cfg: Settings = settings) -> dict:
+    gate = assess_safety(rewrite(question))
+    if gate.refused:
+        return {
+            "refused": True, "refusal_code": gate.code, "reason": gate.reason,
+            "claims": [], "found": gate.found, "missing": gate.missing,
+            "next_steps": gate.next_steps, "limitations": [],
+        }
     if not cfg.llm_api_key:
         raise RuntimeError("运行纯 LLM 基线需要 LLM_API_KEY")
     response = requests.post(

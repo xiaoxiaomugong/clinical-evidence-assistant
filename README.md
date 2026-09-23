@@ -210,12 +210,13 @@ python3 scripts/benchmark_retrieval.py \
 
 ## 已实现的安全边界
 
-- 引用编号只能来自重排后 Top-K 可引用列表；越界编号立即判失败。
+- 生成证据包再次检查独立来源和必要类型；引用编号只能来自实际传入生成器的证据包。
 - 知识页 PMID 带核对日期；运行脚本可再次向 NCBI 批量回查。
-- 回答按原子陈述生成；数字必须出现在证据正文或元数据中。
+- 回答按原子陈述生成；数字及显式单位必须与证据一致，并检查字面否定反转。这些规则不能代替医学语义审查。
 - 不支持的陈述和不可用引用会在进入 UI 前被物理移除；净化后无核心陈述则拒答。
 - 按 PMID/DOI/NCT 统计独立来源；来源不足、缺预期证据类型或冲突未解释时拒答。
 - 疑似 PHI 与个体化剂量、停药、换药问题会在检索和外部调用前阻断。
+- 模型生成的无引用辅助字段使用应用固定文案；PHI 阻断响应不回传原始题干。
 - 明显超领域、虚构疗法、空候选或低相关问题在生成前拒答。
 - ClinicalTrials.gov 条目固定标为 `ClinicalTrial`，并保留 `status`，不会冒充已发表 RCT。
 - Europe PMC 预印本默认过滤；关闭过滤时明确标为 `preprint`。
@@ -336,7 +337,26 @@ supabase db lint --local --schema public --fail-on error
 - 生成层：引用准确率、受支持陈述率、关键点覆盖率、拒答正确率
 - 明细：每题 Top-1、分数、延迟、结构化回答
 
-`eval/run_compare.py` 用锁定配置保存 Arm A 纯 LLM、Arm B 正常 RAG 与 Arm C 劣化 RAG 的全部原始工件。三臂使用同一安全规则、温度和原子陈述 JSON schema；Arm A 需要配置 `LLM_API_KEY`，未配置时会显式记为 skipped，不伪造基线结果。
+`eval/run_compare.py` 对 Arm A 纯 LLM、Arm B 正常 RAG 与 Arm C 劣化 RAG 统一执行输入预检，分别记录执行状态和应答行为。Arm A 需要配置 `LLM_API_KEY`，未配置时记为 skipped，质量指标为 N/A。C 仅标为 `legacy_degraded_smoke`，不代表已完成指定证据扰动实验。净化前输出由显式启用的本地 recorder 保存，不加入公开 Tool/MCP 响应。
+
+### P0 优化与隔离回归
+
+候选保留与 Top-8 选择使用独立配置。原文保留通过工程门禁后，默认设为 `CANDIDATE_POOL_POLICY=source_preserving`；可独立回滚为 `legacy`。`TOP8_SELECTION_POLICY` 默认仍为 `legacy`，`document_diverse` 因覆盖回归未通过而保留为实验项。两者回滚不关闭生成证据包安全复核。实施范围、实测门禁和未完成项见 [P0 实施报告](docs/optimization_p0_implementation_report.md)，设计依据见 [P0 优化方案](docs/optimization_p0_plan.md)。
+
+下面的维护命令需要本地保留的原 P0 冻结工件，输出目录必须不存在：
+
+```bash
+python -m eval.run_p0 --output data/eval_runs/p0-new-run \
+  --profiles C0 C1 --arms B0 B1 R1 I1 G1 R2 --performance --trials 180
+```
+
+runner 在干净子进程中禁用 live、云端和 LLM，冻结代码/数据，执行两次确定性回归及网络拒绝自检；报告包含阶段候选、原始与净化后陈述映射、逐题状态、耗时和哈希。历史 B0 无完整阶段 recorder。并发性能使用轻量计时，不把保存全文的诊断开销混入主性能结果。
+
+`I1` 是审查后增加的身份计数诊断臂：R1 仅修候选，I1 再修来源身份，G1 再加生成包复核，R2 最后加 Top-8 多样性。历史规则只在隔离 worker 中复现，不是产品配置。性能报告同时列实际应答次数；请求数达到 100 不代表应答样本已足够。
+
+旧 15 题与 `eval/metrics.py` 保持冻结，得分属于工程代理指标。可通过 `--dataset`、`--qrels` 接入独立数据集；新分级评分器会保留未标注候选的不可比较状态。未建立独立评审集时，不据此宣称临床质量达标。
+
+语料候选使用独立 manifest/索引路径。`scripts/audit_corpus.py --check` 会在质量门禁失败时返回非零退出码，默认报告模式仍允许检查未达标语料。不要将候选索引覆盖原始 P0 索引。
 
 ## 目录
 

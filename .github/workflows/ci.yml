@@ -28,6 +28,22 @@ jobs:
         run: python -m pip install -e '.[mcp]'
       - name: Run tests
         run: pytest -q
+        env:
+          EVIDENCE_ASSISTANT_ENV_FILE: /tmp/clinical-evidence-ci-absent.env
+          ENABLE_LIVE_APIS: "false"
+          ENABLE_SUPABASE: "false"
+          LLM_API_KEY: ""
+      - name: Require MCP runtime and verify real stdio transport
+        if: matrix.python-version == '3.11'
+        env:
+          CLINICAL_REQUIRE_MCP: "1"
+          EVIDENCE_ASSISTANT_ENV_FILE: /tmp/clinical-evidence-ci-absent.env
+          ENABLE_LIVE_APIS: "false"
+          ENABLE_SUPABASE: "false"
+          LLM_API_KEY: ""
+        run: |
+          python -c "import sys, mcp; assert sys.version_info[:2] == (3, 11)"
+          python -m pytest -q tests/test_mcp_server.py tests/test_mcp_stdio.py
       - name: Run offline smoke test
         env:
           ENABLE_LIVE_APIS: "false"

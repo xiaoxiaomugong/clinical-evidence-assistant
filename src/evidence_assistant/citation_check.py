@@ -6,10 +6,17 @@ from typing import Dict, List
 
 from .candidate_pool import canonical_source_id
 from .schemas import Answer, AnswerParagraph, CheckedCitation, CitationCheck, Entry
+from .output_policy import sanitize_generated_metadata
 from .text_utils import term_overlap
 
 
-NUMBER_PATTERN = re.compile(r"(?<![\w.])\d+(?:,\d{3})*(?:\.\d+)?\s*%?")
+NUMBER_PATTERN = re.compile(r"(?<![A-Za-z0-9_.])\d+(?:,\d{3})*(?:\.\d+)?\s*%?")
+QUANTITY_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_.])(\d+(?:,\d{3})*(?:\.\d+)?)\s*"
+    r"(mmhg|mmol/l|mg/dl|mg/kg|μg|µg|mcg|mg|kg|ml|mm|cm|g|l|%|毫克|微克|毫米汞柱|天|周|个月|年)(?![a-z])",
+    re.IGNORECASE,
+)
+NEGATION = re.compile(r"未能|未|不|没有|无|不能|\b(?:not|no|never|without)\b", re.IGNORECASE)
 
 
 def _existence(entry: Entry) -> str:
@@ -50,7 +57,32 @@ def _numeric_consistency(conclusion: str, evidence: str) -> bool:
     if not claimed:
         return True
     available = _normalized_numbers(evidence)
-    return claimed.issubset(available)
+    if not claimed.issubset(available):
+        return False
+    def quantities(text):
+        return {(number.replace(",", "").lstrip("0") or "0", unit.lower())
+                for number, unit in QUANTITY_PATTERN.findall(text)}
+    return quantities(conclusion).issubset(quantities(evidence))
+
+
+def _explicit_polarity_conflict(conclusion: str, evidence: str) -> bool:
+    """Block literal predicate reversals; this is not a semantic/NLI judge.
+
+    Only identical clauses after removing explicit negation are compared.
+    Mixed predicates or broad clinical paraphrases remain outside this rule.
+    """
+    def clauses(text):
+        for clause in re.split(r"[。！？.!?;；\n]", text):
+            negative = bool(NEGATION.search(clause))
+            normalized = re.sub(r"[\s,，:：]", "", NEGATION.sub("", clause)).lower()
+            if normalized:
+                yield normalized, negative
+    sources = list(clauses(evidence))
+    for predicate, negative in clauses(conclusion):
+        if len(predicate) >= 4 and any(predicate == other and negative != other_negative
+                                       for other, other_negative in sources):
+            return True
+    return False
 
 
 def _evidence_text(entry: Entry) -> str:
@@ -67,6 +99,8 @@ def _support(conclusion: str, entry: Entry, generator: str) -> str:
         return "unsupported"
     if generator == "extractive" and conclusion.strip() == entry.text.strip():
         return "support"
+    if _explicit_polarity_conflict(conclusion, entry.text):
+        return "unsupported"
     overlap = term_overlap(conclusion, evidence)
     if overlap >= 0.14:
         return "support"
@@ -150,6 +184,7 @@ def verify(answer: Answer, entries: List[Entry]) -> CitationCheck:
 
 def sanitize_answer(answer: Answer, check: CitationCheck) -> Answer:
     """Remove unsupported claims and unusable citations before any UI can render them."""
+    answer = sanitize_generated_metadata(answer)
     usable_by_paragraph = defaultdict(list)
     for item in check.checked:
         if _check_is_usable(item):

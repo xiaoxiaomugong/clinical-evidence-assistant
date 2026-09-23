@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import List, Tuple
 
-from .candidate_pool import research_family_id
+from .candidate_pool import independent_source_count
 from .schemas import Answer, CitationCheck, Entry, EvidenceGateResult, QuerySpec
 
 
@@ -58,9 +58,8 @@ def assess_safety(spec: QuerySpec) -> EvidenceGateResult:
 
 
 def _evidence_summary(entries: List[Entry]) -> Tuple[List[str], int]:
-    sources = {research_family_id(entry) for entry in entries if research_family_id(entry)}
     levels = sorted({entry.evidence_level for entry in entries if entry.evidence_level})
-    return levels, len(sources)
+    return levels, independent_source_count(entries)
 
 
 def assess_evidence(

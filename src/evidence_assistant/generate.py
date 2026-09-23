@@ -7,6 +7,7 @@ import requests
 
 from .config import Settings, settings
 from .schemas import Answer, AnswerParagraph, Entry
+from .output_policy import EXTRACTIVE_LIMITATIONS
 
 
 COMMON_SAFETY_RULES = """规则：
@@ -22,6 +23,7 @@ SYSTEM_PROMPT = f"""你是临床证据助手。只基于提供的候选证据回
 1. claims 中每一项只能写一条可独立核验的事实性陈述。
 2. 每条 claim 必须提供 citation_ids，编号只能来自本次可引用列表。
 3. 没有编号能直接支持的事实、数字或建议不得写入回答。
+适用人群、例外、不确定性和证据局限中的事实也必须放进带 citation_ids 的 claims；其他字段只接受应用固定说明，不能作为额外结论通道。
 4. 只输出 JSON：{{"refused":false,"claims":[{{"text":"原子陈述","citation_ids":[1],"claim_type":"effect","certainty":"moderate"}}],"limitations":["局限"],"found":[],"missing":[],"next_steps":[]}}。"""
 
 
@@ -121,10 +123,7 @@ def extractive_answer(question: str, entries: List[Entry], max_paragraphs: int =
         AnswerParagraph(text=entry.text, citation_ids=[entry.citation_number])
         for entry in selected
     ]
-    limitations = [
-        "当前为离线可审计模式：回答直接摘取经核对的知识页或文献摘要，不进行超出证据的推断。",
-        "内容仅供学习与研究，不构成诊疗建议；个体决策需由临床专业人员结合完整病史与检查完成。",
-    ]
+    limitations = list(EXTRACTIVE_LIMITATIONS)
     return Answer(
         refused=False,
         paragraphs=paragraphs,

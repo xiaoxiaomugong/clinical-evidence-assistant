@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run locked Arm A/B/C comparisons and persist every raw evaluation artifact."""
+"""Run Arm A/B/C comparisons with shared preflight and privacy-safe records."""
 
 from __future__ import annotations
 
@@ -20,18 +20,36 @@ for path in (str(ROOT), str(SRC)):
 
 from config import settings
 from evidence_assistant.pipeline import EvidencePipeline
+from evidence_assistant.query_rewrite import redact_phi, rewrite
+from evidence_assistant.refusal import assess_safety
 from eval.baseline import call_baseline
 
 
-def _arm_record(item: dict, arm: str, payload: dict, elapsed_ms: int, error: str = "") -> dict:
+def _safe_payload(value):
+    """Exclude request text and diagnostics; redact known PHI patterns in output."""
+    if isinstance(value, dict):
+        return {key: _safe_payload(item) for key, item in value.items()
+                if key not in {"question", "query_spec", "trace", "error", "original"}}
+    if isinstance(value, list):
+        return [_safe_payload(item) for item in value]
+    return redact_phi(value) if isinstance(value, str) else value
+
+
+def _arm_record(item: dict, arm: str, payload: dict, elapsed_ms, *,
+                run_status: str = "success", error_code: str = "", status_reason: str = "") -> dict:
+    answer = payload if arm == "A" else payload.get("answer", {})
+    if run_status == "success" and type(answer.get("refused")) is not bool:
+        raise ValueError("successful arm requires a boolean refusal status")
     return {
         "question_id": item["id"],
-        "question": item["question"],
         "type": item.get("type", ""),
         "arm": arm,
         "elapsed_ms": elapsed_ms,
-        "error": error,
-        "payload": payload,
+        "run_status": run_status,
+        "answer_status": ("refused" if answer.get("refused") else "answered") if run_status == "success" else None,
+        "error_code": error_code,
+        "status_reason": status_reason,
+        "payload": _safe_payload(payload),
     }
 
 
@@ -41,22 +59,21 @@ def _summarize(records: list) -> dict:
         by_arm[record["arm"]].append(record)
     summary = {}
     for arm, rows in sorted(by_arm.items()):
-        successful = [row for row in rows if not row["error"]]
-        refusals = 0
+        successful = [row for row in rows if row["run_status"] == "success"]
+        refusals = sum(row["answer_status"] == "refused" for row in successful)
         verified_outputs = 0
         for row in successful:
             payload = row["payload"]
-            if arm == "A":
-                refusals += bool(payload.get("refused", False))
-            else:
-                answer = payload.get("answer", {})
-                refusals += bool(answer.get("refused", False))
+            if arm != "A":
                 check = payload.get("citation_check") or {}
                 verified_outputs += bool(check.get("output_valid", False))
         summary[arm] = {
             "runs": len(rows),
             "successful": len(successful),
-            "errors": len(rows) - len(successful),
+            "errors": sum(row["run_status"] == "error" for row in rows),
+            "skipped": sum(row["run_status"] == "skipped" for row in rows),
+            "answered": len(successful) - refusals,
+            "refused": refusals,
             "refusal_rate": refusals / len(successful) if successful else None,
             "verified_output_rate": (
                 verified_outputs / len(successful) if successful and arm != "A" else None
@@ -69,42 +86,34 @@ def _summarize(records: list) -> dict:
 
 
 def compare(test_set: list, include_degraded: bool = True, require_baseline: bool = False) -> dict:
-    pipeline = EvidencePipeline(settings)
+    if require_baseline and not settings.llm_api_key:
+        raise RuntimeError("Arm A requires LLM_API_KEY when --require-baseline is used")
+    pipeline = None
     records = []
     for item in test_set:
-        if settings.llm_api_key:
+        gate = assess_safety(rewrite(item["question"]))
+        for arm in (["A", "B", "C"] if include_degraded else ["A", "B"]):
+            if arm == "A" and not settings.llm_api_key:
+                records.append(_arm_record(item, arm, {}, None, run_status="skipped", status_reason="baseline_not_configured"))
+                continue
             started = time.perf_counter()
             try:
-                payload = call_baseline(item["question"], settings)
-                records.append(
-                    _arm_record(item, "A", payload, int((time.perf_counter() - started) * 1000))
-                )
+                if gate.refused:
+                    # A blocked case retains only its ID and block code, never the input.
+                    answer = {"refused": True, "refusal_code": gate.code}
+                    payload = answer if arm == "A" else {"answer": answer, "retrieval_backend": "not_run", "rerank_backend": "not_run"}
+                elif arm == "A":
+                    payload = call_baseline(item["question"], settings)
+                else:
+                    if pipeline is None:
+                        pipeline = EvidencePipeline(settings)
+                    kwargs = {"retrieval_profile": "degraded"} if arm == "C" else {}
+                    result = pipeline.run(item["question"], mode="hybrid", enable_live_apis=False, **kwargs)
+                    payload = result.to_dict()
+                records.append(_arm_record(item, arm, payload, int((time.perf_counter() - started) * 1000)))
             except Exception as error:
-                records.append(
-                    _arm_record(
-                        item,
-                        "A",
-                        {},
-                        int((time.perf_counter() - started) * 1000),
-                        f"{type(error).__name__}: {error}",
-                    )
-                )
-        elif require_baseline:
-            raise RuntimeError("Arm A requires LLM_API_KEY when --require-baseline is used")
-        else:
-            records.append(_arm_record(item, "A", {}, 0, "LLM_API_KEY not configured; Arm A skipped"))
-
-        result = pipeline.run(item["question"], mode="hybrid", enable_live_apis=False)
-        records.append(_arm_record(item, "B", result.to_dict(), result.elapsed_ms))
-
-        if include_degraded:
-            degraded = pipeline.run(
-                item["question"],
-                mode="hybrid",
-                enable_live_apis=False,
-                retrieval_profile="degraded",
-            )
-            records.append(_arm_record(item, "C", degraded.to_dict(), degraded.elapsed_ms))
+                records.append(_arm_record(item, arm, {}, int((time.perf_counter() - started) * 1000),
+                                           run_status="error", error_code=type(error).__name__))
 
     return {
         "protocol": {
@@ -117,7 +126,7 @@ def compare(test_set: list, include_degraded: bool = True, require_baseline: boo
             "arms": {
                 "A": "pure LLM, no retrieval; same safety and JSON claim schema",
                 "B": "normal offline RAG",
-                "C": "deterministically degraded offline RAG",
+                "C": "legacy_degraded_smoke",
             },
         },
         "summary": _summarize(records),

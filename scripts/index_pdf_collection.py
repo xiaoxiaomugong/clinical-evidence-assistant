@@ -81,8 +81,9 @@ def load_manifest(collection_dir: Path) -> List[dict]:
     path = collection_dir / "selected_manifest.csv"
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    if len(rows) != 500 or len({row["pmid"] for row in rows}) != 500:
-        raise ValueError(f"Expected 500 unique manifest rows, found {len(rows)}")
+    ids = [row.get("pmid", "").strip() for row in rows]
+    if not rows or not all(value.isdigit() for value in ids) or len(set(ids)) != len(rows):
+        raise ValueError(f"Expected nonempty unique PMID manifest rows, found {len(rows)}")
     return rows
 
 
@@ -283,12 +284,15 @@ def build_index(collection_dir: Path, output: Path, pubmed: Dict[str, dict]) -> 
         year = metadata.get("year") or (int(row["pub_year"]) if row.get("pub_year", "").isdigit() else None)
         authors = metadata.get("authors") or []
         study_type = metadata.get("study_type") or "PDF full text"
-        evidence_level = metadata.get("evidence_level") or "Other"
+        publication_types = metadata.get("publication_types") or re.split(r",\s*", metadata.get("study_type") or "")
+        evidence_level = publication_type_to_level(publication_types)
         valid = path.exists() and pdf_magic(path)
         page_count, pages, error = extract_pdf(path) if valid else (0, [], "not a valid PDF file")
         extracted_chars = sum(len(text) for _, text in pages)
-        full_text = extracted_chars >= 300
-        status = "full_text" if full_text else "abstract_fallback"
+        page_chunks = [(page_number, number, text) for page_number, page_text in pages
+                       for number, text in enumerate(chunk_text(page_text), start=1)]
+        full_text = extracted_chars >= 300 and bool(page_chunks)
+        status = "full_text" if full_text else ("abstract_fallback" if len(abstract) >= 80 and abstract != clean_text(title) else "title_only")
         if not valid:
             stats["invalid_pdf"] += 1
         if error and valid:
@@ -312,17 +316,12 @@ def build_index(collection_dir: Path, output: Path, pubmed: Dict[str, dict]) -> 
 
         chunk_rows = []
         if full_text:
-            for page_number, page_text in pages:
-                for chunk_number, text in enumerate(chunk_text(page_text), start=1):
-                    chunk_rows.append((
-                        f"{document_id}:pdf:p{page_number}:c{chunk_number}",
-                        document_id,
-                        page_number,
-                        text,
-                    ))
+            chunk_rows = [(f"{document_id}:pdf:p{page_number}:c{chunk_number}", document_id, page_number, text)
+                          for page_number, chunk_number, text in page_chunks]
         fallback_text = abstract or title
         if not chunk_rows and fallback_text:
-            chunk_rows.append((f"{document_id}:abstract", document_id, None, fallback_text))
+            suffix = "abstract" if status == "abstract_fallback" else "title"
+            chunk_rows.append((f"{document_id}:{suffix}", document_id, None, fallback_text))
         connection.executemany("INSERT INTO chunks VALUES (?, ?, ?, ?)", chunk_rows)
         connection.executemany(
             "INSERT INTO chunk_fts(chunk_id, doc_id, title, text) VALUES (?, ?, ?, ?)",

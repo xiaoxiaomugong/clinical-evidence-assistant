@@ -12,6 +12,7 @@ htmlcov/
 .streamlit/secrets.toml
 data/cache/*.json
 data/eval_results/
+data/eval_runs/
 .DS_Store
 
 # Local literature corpus and generated full-text indexes are intentionally

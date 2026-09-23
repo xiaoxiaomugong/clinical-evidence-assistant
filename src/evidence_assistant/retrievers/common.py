@@ -96,18 +96,36 @@ def get_with_retry(
     raise RuntimeError("unreachable")
 
 
-def publication_type_to_level(publication_types: List[str], is_preprint: bool = False) -> str:
+def publication_type_classification(publication_types: List[str], is_preprint: bool = False) -> dict:
+    """Map explicit publication labels, retaining uncertainty and the source basis.
+
+    Generic journal/research-support labels never establish a study design.
+    Review/meta-analysis overlap is normal; an original randomized trial and
+    a synthesis/guideline label together require review instead of precedence.
+    """
+    normalized = {" ".join(item.lower().split()) for item in publication_types if item.strip()}
+    basis = sorted(normalized)
     if is_preprint:
-        return "preprint"
-    normalized = {item.lower() for item in publication_types}
-    if "meta-analysis" in normalized:
-        return "Meta-analysis"
-    if normalized & {"guideline", "practice guideline"}:
-        return "Guideline"
-    if "randomized controlled trial" in normalized:
-        return "RCT"
-    if "consensus development conference" in normalized:
-        return "Consensus"
-    if normalized & {"review", "systematic review"}:
-        return "Review"
-    return "Other"
+        level, status = "preprint", "metadata_mapped"
+    else:
+        synthesis = {"meta-analysis", "guideline", "practice guideline", "review", "systematic review",
+                     "consensus development conference", "consensus development conference, nih", "consensus statement"}
+        if "randomized controlled trial" in normalized and normalized & synthesis:
+            level, status = "Other", "classification_conflict"
+        elif "meta-analysis" in normalized:
+            level, status = "Meta-analysis", "metadata_mapped"
+        elif normalized & {"guideline", "practice guideline"}:
+            level, status = "Guideline", "metadata_mapped"
+        elif "randomized controlled trial" in normalized:
+            level, status = "RCT", "metadata_mapped"
+        elif normalized & {"consensus development conference", "consensus development conference, nih", "consensus statement"}:
+            level, status = "Consensus", "metadata_mapped"
+        elif normalized & {"review", "systematic review"}:
+            level, status = "Review", "metadata_mapped"
+        else:
+            level, status = "Other", "unmapped_publication_type" if normalized else "metadata_missing"
+    return {"evidence_level": level, "classification_basis": basis, "classification_review_status": status}
+
+
+def publication_type_to_level(publication_types: List[str], is_preprint: bool = False) -> str:
+    return publication_type_classification(publication_types, is_preprint)["evidence_level"]

@@ -98,3 +98,52 @@ def test_high_original_claim_failure_rate_refuses_even_if_one_claim_survives():
 
     assert gate.refused
     assert gate.code == "CITATION_FAILURE"
+
+
+def test_reversing_explicit_negation_is_not_supported_by_word_overlap():
+    entry = evidence(1, "该干预未降低心血管风险。")
+    answer = Answer(False, paragraphs=[AnswerParagraph("该干预降低心血管风险。", [1])], generator="llm:test")
+    check = verify(answer, [entry])
+    assert check.stripped_paragraphs == [0]
+    assert sanitize_answer(answer, check).paragraphs == []
+
+
+def test_same_number_with_wrong_unit_is_removed():
+    entry = evidence(1, "收缩压平均下降 2 mmHg。")
+    answer = Answer(False, paragraphs=[AnswerParagraph("收缩压平均下降 2 mg。", [1])], generator="llm:test")
+    check = verify(answer, [entry])
+    assert check.checked[0].numeric_consistent is False
+    assert sanitize_answer(answer, check).paragraphs == []
+
+
+def test_matching_negation_and_unit_remain_supported():
+    for text in ("该干预未降低心血管风险。", "收缩压平均下降 2 mmHg。"):
+        entry = evidence(1, text)
+        check = verify(Answer(False, paragraphs=[AnswerParagraph(text,[1])],generator="llm:test"),[entry])
+        assert check.output_valid
+
+
+def test_english_negation_word_boundaries_survive_normalization():
+    entry = evidence(1, "Treatment did not reduce risk.")
+    check = verify(Answer(False, paragraphs=[AnswerParagraph("Treatment did reduce risk.",[1])],
+                          generator="llm:test"), [entry])
+    assert check.stripped_paragraphs == [0]
+
+
+def test_chinese_numbers_without_spaces_still_require_matching_units():
+    entry = evidence(1, "收缩压平均下降2mmHg。")
+    check = verify(Answer(False, paragraphs=[AnswerParagraph("收缩压平均下降2mg。",[1])],
+                          generator="llm:test"), [entry])
+    assert check.checked[0].numeric_consistent is False
+
+
+def test_auxiliary_fields_cannot_bypass_citation_validation():
+    entry = evidence(1, "限钠干预与血压下降相关。")
+    answer = Answer(False, paragraphs=[AnswerParagraph(entry.text,[1])], generator="llm:test",
+                    limitations=["死亡风险下降999999%"], next_steps=["建议停药"],
+                    found=["发现新疗法"], missing=["需要增加药量"], reason="建议换药")
+    result = sanitize_answer(answer,verify(answer,[entry]))
+    assert result.paragraphs
+    assert result.next_steps == result.found == result.missing == []
+    assert not result.reason
+    assert '999999' not in str(result.limitations)
