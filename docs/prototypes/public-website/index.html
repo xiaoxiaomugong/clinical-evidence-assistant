@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="循证知问网站交互原型：公众版与专业版，共用可追溯的证据。">
+  <title>循证知问 · 交互原型</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script src="content.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="prototype-strip"><span><span class="status-dot"></span>交互原型</span><span>本地示例数据 · 未连接实时检索或模型</span><a href="#/methodology">了解示例来源 <span aria-hidden="true">↗</span></a></div>
+  <header class="site-header">
+    <a class="brand" href="#/" aria-label="循证知问首页"><span class="brand-mark" aria-hidden="true">✳</span><span>循证知问<small>EVIDENCE, WITH CONTEXT</small></span></a>
+    <button id="menu-toggle" class="menu-toggle" aria-label="打开导航" aria-expanded="false" aria-controls="main-nav">菜单 <span aria-hidden="true">☰</span></button>
+    <nav id="main-nav" aria-label="主导航"><a href="#/ask" data-nav="ask">公众版</a><a href="#/topics" data-nav="topics">主题库</a><a href="#/methodology" data-nav="methodology">方法与来源</a><a class="nav-pro" href="#/professional" data-nav="professional">进入专业版 <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main" tabindex="-1"></main>
+  <footer class="site-footer"><div><a class="footer-brand" href="#/">✳ 循证知问</a><p>理解证据，也理解它的边界。</p></div><div class="footer-links"><a href="#/methodology">方法与来源</a><a href="#/privacy">隐私说明</a><a href="#/terms">使用说明</a><a href="#/contact">联系与反馈</a></div><small>交互设计预览 · 内容来自项目现有快照，仅用于演示。<br>医学内容未在本次原型制作中重新评审；个体诊疗请咨询专业人员。</small></footer>
+  <dialog id="source-dialog" class="source-dialog" aria-labelledby="source-title"><div id="source-content"></div></dialog>
+  <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-title"><form method="dialog"><button class="dialog-close" aria-label="关闭反馈">×</button></form><span class="eyebrow">HELP US MAKE IT CLEARER</span><h2 id="feedback-title">哪里可以更清楚？</h2><p class="muted">选择一个反馈类型，体验反馈流程。</p><div class="feedback-options"><button data-feedback="难理解">文字有些难理解</button><button data-feedback="引用打不开">引用打不开</button><button data-feedback="疑似错误">内容疑似有误</button></div><p id="feedback-status" class="feedback-status" role="status"></p><p class="fine-print">原型反馈仅在当前页面演示，不会发送或保存。</p></dialog>
+  <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

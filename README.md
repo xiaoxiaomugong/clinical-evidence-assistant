@@ -75,7 +75,28 @@ clinical-evidence-ui
 clinical-evidence-ui --check
 ```
 
-## 立即运行 Web UI
+## 本地真实问答网站（React + FastAPI）
+
+新增公众版、专业版 PICO、真实问答与引用详情、主题库及说明页面。Web 入口固定使用内置知识页和精选快照，隔离本机 `.env`，不调用实时检索、云端数据库或在线模型。
+
+```bash
+# 项目根目录，已有 .venv 时无需重新创建
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[web,dev,pdf,ui]'
+npm --prefix frontend ci
+
+# 终端一
+.venv/bin/python scripts/run_web.py
+
+# 终端二
+npm --prefix frontend run dev
+```
+
+打开 <http://127.0.0.1:5173>。完整启动、配置、公开接口与阶段边界见 [本地网站说明](docs/local-website.md)。
+
+2026-09-30 至 2026-10-01 发布基线复验：服药时间和地中海饮食问题已过滤跨主题陈述；问题覆盖不足仍拒答，独立来源及引用校验继续执行。本地 Python 完整回归为 **218 passed、2 skipped**，前端为 **11 passed**，API 自检、类型检查与生产构建通过。两项跳过的是当前 Python 3.9 环境未安装可选 MCP 运行时的测试；结果属于工程验证，不是医学正确率或临床评审。浏览器复验及远端 CI 的状态见 [本地网站验收记录](docs/local-website-qa.md)，最终 CI 以对应提交 SHA 的 Actions 运行为准。
+
+## 运行原有 Streamlit UI
 
 推荐 Python 3.11；代码兼容 Python 3.9+。
 
@@ -335,6 +356,7 @@ python3 eval/run_compare.py
 GitHub Actions 在 Python 3.9 和 3.11 上验证核心离线流程，并在 Python 3.11 任务中额外安装
 `mcp` extra、通过真实 stdio 子进程发现并调用 MCP tool，检查 stdout 协议及拒答行为。该 CI 步骤用
 `CLINICAL_REQUIRE_MCP=1` 将运行时缺失视为失败；未安装 MCP 的普通本地环境则跳过相关测试。
+网站 CI 任务另运行离线完整 Python 回归、真实 API 自检、前端测试、类型检查与生产构建。
 
 2026-09-23 本地验证记录：核心测试 **179 通过、2 跳过**（Python 3.9.6），另在 Python 3.13.13 / MCP 2.0.0
 环境完成 **2 项 MCP 测试**；离线 smoke、桌面入口 `--check` 与知识页 lint 通过。核心测试有 5 条既有

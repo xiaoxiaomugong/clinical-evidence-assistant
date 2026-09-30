@@ -9,7 +9,7 @@ from dataclasses import asdict
 
 STAGES = ("rewrite_safety", "knowledge_retrieval", "snapshot_retrieval", "pdf_retrieval",
           "cloud_retrieval", "static_selection", "preliminary_pool", "preliminary_rerank",
-          "live_retrieval", "pool", "rerank", "top8_selection", "evidence_gate",
+          "live_retrieval", "pool", "rerank", "top8_selection", "question_coverage", "evidence_gate",
           "generation_selection", "generation_gate", "generate", "verify", "sanitize", "post_gate")
 
 

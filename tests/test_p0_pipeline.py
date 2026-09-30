@@ -166,6 +166,12 @@ def test_generator_cannot_cite_entry_outside_actual_packet(monkeypatch,tmp_path)
     omitted={}
     def packet(rows,max_items):
         actual=select_complementary(rows,max_items)
+        if len(actual) == len(rows):
+            # Relevance filtering can leave at most five candidates. Force one
+            # duplicate source out without weakening the three-source gate.
+            from evidence_assistant.candidate_pool import independent_source_count
+            actual = next((subset for subset in ([e for e in actual if e.id != candidate.id] for candidate in actual)
+                           if independent_source_count(subset) >= 3), actual)
         omitted['entry']=next(e for e in rows if e.id not in {x.id for x in actual})
         return actual
     def invented(q,rows,cfg):
