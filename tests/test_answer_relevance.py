@@ -1,18 +1,32 @@
 """Real offline engine checks for question coverage, not just cited support."""
 from pathlib import Path
+from dataclasses import replace
 
 import pytest
 
 from evidence_assistant.pipeline import EvidencePipeline
+from evidence_assistant.config import settings
 
 
 @pytest.fixture
 def offline_pipeline(tmp_path):
-    from evidence_assistant.web import _DisabledPdfCorpus, _web_settings
-
-    pipe = EvidencePipeline(_web_settings(Path(__file__).resolve().parents[1], tmp_path))
-    pipe.pdf_corpus = _DisabledPdfCorpus()
-    return pipe
+    root = Path(__file__).resolve().parents[1]
+    data = root / "data"
+    cfg = replace(
+        settings,
+        root_dir=root, data_dir=data, cache_dir=tmp_path / "cache",
+        knowledge_dir=data / "knowledge_pages",
+        local_corpus_path=data / "raw" / "local_corpus.json",
+        pdf_collection_dir=tmp_path / "disabled-pdf",
+        pdf_index_path=tmp_path / "absent.sqlite3",
+        vector_index_path=tmp_path / "indexes",
+        retrieval_backend="legacy", rerank_backend="deterministic",
+        candidate_pool_policy="source_preserving", top8_selection_policy="legacy",
+        top_k=8, generation_top_k=5, minimum_independent_sources=3,
+        pre_refusal_threshold=0.18, enable_live_apis=False,
+        enable_supabase=False, llm_api_key="",
+    )
+    return EvidencePipeline(cfg)
 
 
 def _claims(result):

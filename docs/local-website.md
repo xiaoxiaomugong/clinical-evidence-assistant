@@ -10,7 +10,7 @@
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[web,dev]'
+.venv/bin/python -m pip install -e '.[web,dev,pdf]'
 npm --prefix frontend ci
 ```
 
@@ -116,7 +116,7 @@ npm --prefix frontend run typecheck
 npm --prefix frontend run build
 ```
 
-只有测试依赖安装步骤联网；故障和降级由测试替身产生，不接触真实供应商。普通核心环境未安装可选 Web 或 MCP 依赖时，相应测试会跳过。完整网站回归需要安装 `.[web,dev]`。
+只有测试依赖安装步骤联网；故障和降级由测试替身产生，不接触真实供应商。普通核心环境未安装可选 Web 或 MCP 依赖时，相应测试会跳过。完整网站回归需安装 `.[web,dev,pdf]`：完整 Python 测试集包含 PDF 模块测试，尽管 Web 运行本身不读取本机 PDF 索引。
 
 ## 与初步设计的阶段差异
 

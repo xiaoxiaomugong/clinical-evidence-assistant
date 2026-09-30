@@ -82,7 +82,7 @@ clinical-evidence-ui --check
 ```bash
 # 项目根目录，已有 .venv 时无需重新创建
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[web,dev]'
+.venv/bin/python -m pip install -e '.[web,dev,pdf]'
 npm --prefix frontend ci
 
 # 终端一

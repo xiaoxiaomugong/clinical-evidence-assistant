@@ -142,7 +142,9 @@ class BrokenCrossEncoder:
 class PreferHypertensionCrossEncoder:
     def predict(self, pairs, batch_size, show_progress_bar):
         del batch_size, show_progress_bar
-        return [8.0 if "常用起始药物类别" in passage else -8.0 for _, passage in pairs]
+        return [8.0 if "常用起始药物类别" in passage else
+                4.0 if "WHO 为非妊娠成人高血压" in passage else -8.0
+                for _, passage in pairs]
 
 
 def entry(entry_id: str, text: str) -> Entry:
@@ -208,6 +210,7 @@ def test_pipeline_uses_hybrid_and_cross_encoder_when_available(tmp_path):
         retrieval_backend="hybrid",
         embedding_model="fake-model",
         vector_index_path=tmp_path,
+        pdf_index_path=tmp_path / "absent.sqlite3",
         rerank_backend="cross_encoder",
         rerank_model="fake-reranker",
         enable_live_apis=False,
@@ -220,10 +223,12 @@ def test_pipeline_uses_hybrid_and_cross_encoder_when_available(tmp_path):
         # Keep the real text and citations, but make dense-only retrieval visible.
         return Chunk(**{**original.__dict__, "id": f"dense:{claim_id}"})
 
+    snapshots = {item.doc_id: item for item in pipeline.local_corpus.chunks}
     indexed_chunks = [
-        dense_copy("htn_claim_1"),
+        Chunk(**{**snapshots["pmid:34775787"].__dict__,
+                 "id": "dense:pmid:34775787:chunk:1"}),
         dense_copy("htn_claim_2"),
-        next(item for item in pipeline.local_corpus.chunks if item.doc_id == "pmid:36240838"),
+        snapshots["pmid:36240838"],
     ]
     encoder = FakeEncoder()
     pipeline.dense_retriever = DenseRetriever(
