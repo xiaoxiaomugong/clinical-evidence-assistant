@@ -25,6 +25,8 @@
 
 首次推送的提交 `5784e7e` 对应 [CI 运行](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/runs/36742771844) 失败：网站任务只安装 Web/开发依赖，完整回归缺少 `pymupdf`；核心矩阵未安装 FastAPI，相关性测试却借用 Web 配置；runner 的 `XDG_CONFIG_HOME` 使桌面默认路径测试前提不成立；检索测试的 Top-8 又受到本机私有 PDF 索引有无的影响。已据日志改为网站 CI 安装 PDF 测试依赖、相关性测试独立构造离线核心流水线、桌面测试清除 XDG 覆盖、检索夹具禁用私有 PDF 并提供三个不同文档身份的真实高血压来源。本地已复现环境差异并重跑相关测试。最终提交的远端 CI 须按新 SHA 及其全部任务验收；本段写于再次推送前，不预先声称通过。本地浏览器复验已完成，临床评审未完成。
 
+第二次推送的提交 `ed60bbe` 对应 [CI 运行](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/runs/36745293037)：Python 3.9 与 3.11 核心任务均通过；网站任务只剩原桌面入口自检因未安装 Streamlit 失败。网站 CI 和本地完整回归安装说明已补 `ui` extra。最终提交的远端 CI 仍须按新 SHA 及其全部任务验收；本段写于再次推送前，不预先声称通过。
+
 ## 首次本地验收（2026-09-30，相关性修复前）
 
 日期：2026-09-30。范围：本机开发版本；全部问答与验证离线执行，未请求医学来源网站、模型、Supabase 或其他付费服务。首次安装开发依赖访问了包仓库。
