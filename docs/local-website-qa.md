@@ -27,6 +27,8 @@
 
 第二次推送的提交 `ed60bbe` 对应 [CI 运行](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/runs/36745293037)：Python 3.9 与 3.11 核心任务均通过；网站任务只剩原桌面入口自检因未安装 Streamlit 失败。网站 CI 和本地完整回归安装说明已补 `ui` extra。最终提交的远端 CI 仍须按新 SHA 及其全部任务验收；本段写于再次推送前，不预先声称通过。
 
+第三次推送的提交 `5d6e050` 对应 [CI 运行](https://github.com/xiaoxiaomugong/clinical-evidence-assistant/actions/runs/36745992752) 已完成，`local-website`、`test (3.9)`、`test (3.11)` 三项任务全部通过。该远端结果验证的是这个明确的 SHA；本验收记录若再形成新提交，仍须单独核对新 SHA 的运行。浏览器关键流程在本轮本地复验，独立临床评审仍未进行。
+
 ## 首次本地验收（2026-09-30，相关性修复前）
 
 日期：2026-09-30。范围：本机开发版本；全部问答与验证离线执行，未请求医学来源网站、模型、Supabase 或其他付费服务。首次安装开发依赖访问了包仓库。
