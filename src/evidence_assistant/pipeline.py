@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 
@@ -32,7 +32,8 @@ from .retrievers import (
     europepmc_search,
     pubmed_search,
 )
-from .schemas import Chunk, Document, EvidenceGateResult, PipelineResult, QuerySpec
+from .schemas import Chunk, DependencyState, Document, EvidenceGateResult, PipelineResult, QuerySpec
+from .retrievers.common import dependency_error_code
 from .retrievers.hybrid import document_to_chunks
 
 
@@ -44,6 +45,9 @@ MODE_LABELS = {
     "knowledge": "knowledge",
     "rag": "rag",
 }
+
+_DEFAULT_RECORDER = object()
+_LIVE_DEPENDENCIES = ("pubmed", "europepmc", "clinicaltrials")
 
 
 class EvidencePipeline:
@@ -63,10 +67,7 @@ class EvidencePipeline:
         self.supabase_configuration_error = ""
         if cfg.enable_supabase:
             if not cfg.supabase_url or not cfg.supabase_publishable_key:
-                self.supabase_configuration_error = (
-                    "ENABLE_SUPABASE=true 但未配置 SUPABASE_URL/"
-                    "SUPABASE_PUBLISHABLE_KEY"
-                )
+                self.supabase_configuration_error = "configuration_error"
             else:
                 try:
                     self.supabase_corpus = SupabaseCorpus(
@@ -74,8 +75,8 @@ class EvidencePipeline:
                         cfg.supabase_publishable_key,
                         timeout=cfg.supabase_timeout,
                     )
-                except ValueError as error:
-                    self.supabase_configuration_error = str(error)
+                except ValueError:
+                    self.supabase_configuration_error = "configuration_error"
         self.dense_retriever = DenseRetriever(
             registry=IndexRegistry(cfg.vector_index_path),
             corpus_version=cfg.corpus_version,
@@ -140,10 +141,10 @@ class EvidencePipeline:
         backend = self.settings.normalized_retrieval_backend()
         legacy_chunks = knowledge_chunks + local_chunks + pdf_chunks + cloud_chunks
         if requested not in {"legacy", "dense", "hybrid"}:
-            reason = f"不支持的 RETRIEVAL_BACKEND={requested}"
+            reason = "retrieval_backend_invalid"
             trace.append(f"检索后端配置无效，已降级为 legacy：{reason}")
             return legacy_chunks, BackendStatus(
-                requested=requested,
+                requested="invalid",
                 actual="legacy",
                 degraded=True,
                 reason=reason,
@@ -161,7 +162,7 @@ class EvidencePipeline:
                 requested=backend,
                 actual="legacy",
                 degraded=True,
-                reason=self.dense_retriever.status.reason,
+                reason="retrieval_backend_unavailable",
             )
             trace.append(f"{backend} 检索不可用，已降级为 legacy：{status.reason}")
             return legacy_chunks, status
@@ -199,20 +200,34 @@ class EvidencePipeline:
         trace.append(f"词法/稠密 RRF 融合后保留 {len(chunks)} 个静态候选")
         return chunks, hybrid.status
 
-    def _live_documents(self, spec, trace: List[str]) -> List[Document]:
+    def _live_documents(self, spec, trace: List[str], dependency_states=None) -> List[Document]:
         documents: List[Document] = []
         retrievers = [
-            ("PubMed", pubmed_search),
-            ("Europe PMC", europepmc_search),
-            ("ClinicalTrials.gov", clinicaltrials_search),
+            ("pubmed", "PubMed", pubmed_search),
+            ("europepmc", "Europe PMC", europepmc_search),
+            ("clinicaltrials", "ClinicalTrials.gov", clinicaltrials_search),
         ]
-        for label, retriever in retrievers:
+        for key, label, retriever in retrievers:
+            started = time.perf_counter()
+            state = DependencyState(actual_backend=key)
             try:
                 found = retriever(spec, top_k=4, cfg=self.settings)
                 documents.extend(found)
+                state.status = "success" if found else "empty"
+                state.reason_code = "completed" if found else "no_results"
+                state.result_count = len(found)
                 trace.append(f"{label} 返回 {len(found)} 条")
-            except (requests.RequestException, ValueError, KeyError) as error:
-                trace.append(f"{label} 不可用，已降级：{type(error).__name__}")
+            except Exception as error:
+                state.status = "error"
+                state.reason_code = dependency_error_code(error)
+                # The fixed Timeout label preserves the existing public trace
+                # contract without including any exception text.
+                reason_label = "Timeout" if state.reason_code == "timeout" else state.reason_code
+                trace.append(f"{label} 不可用，已降级：{reason_label}")
+            finally:
+                state.elapsed_ms = max(0, int((time.perf_counter() - started) * 1000))
+                if dependency_states is not None:
+                    dependency_states[key] = state
         return documents
 
     def run(
@@ -221,8 +236,10 @@ class EvidencePipeline:
         mode: str = "hybrid",
         enable_live_apis: Optional[bool] = None,
         retrieval_profile: str = "normal",
+        *,
+        recorder=_DEFAULT_RECORDER,
     ) -> PipelineResult:
-        observer = RunObserver(self.recorder)
+        observer = RunObserver(self.recorder if recorder is _DEFAULT_RECORDER else recorder)
         started = time.perf_counter()
         status = "success"
         try:
@@ -242,6 +259,15 @@ class EvidencePipeline:
         started = time.perf_counter()
         canonical_mode = MODE_LABELS.get(mode, "hybrid")
         live_enabled = self.settings.enable_live_apis if enable_live_apis is None else enable_live_apis
+        dependency_states: Dict[str, DependencyState] = {
+            key: DependencyState(status="not_attempted" if live_enabled else "disabled",
+                                 reason_code="not_started" if live_enabled else "disabled")
+            for key in _LIVE_DEPENDENCIES
+        }
+        dependency_states["supabase"] = DependencyState(
+            status="not_attempted" if self.settings.enable_supabase else "disabled",
+            reason_code="not_started" if self.settings.enable_supabase else "disabled")
+        dependency_states["generator"] = DependencyState()
         trace = ["查询改写：规则词典 + 中英文同义扩展"]
         with observer.measure("rewrite_safety"):
             spec = rewrite(question)
@@ -251,6 +277,8 @@ class EvidencePipeline:
             trace.append(f"预期证据类型：{'、'.join(spec.expected_evidence_types)}")
 
         if safety_gate.refused:
+            for state in dependency_states.values():
+                state.status, state.reason_code = "not_attempted", "safety_gate"
             trace.append(f"触发前置拒答/安全门控：{safety_gate.code}；未执行检索或外部调用")
             return PipelineResult(
                 question="[redacted]" if safety_gate.code == "PHI_BLOCKED" else question,
@@ -263,6 +291,7 @@ class EvidencePipeline:
                 evidence_gate=safety_gate,
                 used_live_api=False,
                 elapsed_ms=int((time.perf_counter() - started) * 1000),
+                dependency_states=dependency_states,
             )
 
         knowledge_chunks = []
@@ -286,16 +315,29 @@ class EvidencePipeline:
             else:
                 trace.append("PDF 本地索引未建立，跳过 500 篇文献库")
             if self.supabase_corpus:
+                cloud_started = time.perf_counter()
+                cloud_state = DependencyState(actual_backend="supabase")
                 try:
                     cloud_chunks = observer.call("cloud_retrieval", self.supabase_corpus.search,
                         spec.local_terms,
                         top_k=self.settings.lexical_retrieve_k,
                     )
                     trace.append(f"Supabase 云端语料召回 {len(cloud_chunks)} 个 chunk")
-                except SupabaseStoreError as error:
-                    trace.append(f"Supabase 云端语料不可用，已使用本地兜底：{error}")
+                    cloud_state.status = "success" if cloud_chunks else "empty"
+                    cloud_state.reason_code = "completed" if cloud_chunks else "no_results"
+                    cloud_state.result_count = len(cloud_chunks)
+                except Exception as error:
+                    cloud_state.status = "error"
+                    cloud_state.reason_code = dependency_error_code(error)
+                    trace.append(f"Supabase 云端语料不可用，已使用本地兜底：{cloud_state.reason_code}")
+                finally:
+                    cloud_state.elapsed_ms = max(0, int((time.perf_counter() - cloud_started) * 1000))
+                    dependency_states["supabase"] = cloud_state
             elif self.supabase_configuration_error:
-                trace.append(f"Supabase 云端语料未启用：{self.supabase_configuration_error}")
+                dependency_states["supabase"] = DependencyState(status="error", reason_code="configuration_error")
+                trace.append("Supabase 云端语料配置不可用，已使用本地兜底：configuration_error")
+        elif self.settings.enable_supabase:
+            dependency_states["supabase"].reason_code = "mode_excluded"
 
         for branch, chunks in (("knowledge", knowledge_chunks), ("snapshot", local_chunks), ("pdf", pdf_chunks), ("cloud", cloud_chunks)):
             observer.candidates("retrieved", chunks, branch=branch)
@@ -318,24 +360,32 @@ class EvidencePipeline:
             should_call_live = True
         if should_call_live and not spec.out_of_scope:
             used_live = True
-            live_documents = observer.call("live_retrieval", self._live_documents, spec, trace)
+            live_documents = observer.call("live_retrieval", self._live_documents, spec, trace, dependency_states)
             observer.candidates("retrieved", [c for d in live_documents for c in document_to_chunks(d)], branch="live")
         elif live_enabled and canonical_mode == "hybrid" and local_confident and not spec.needs_latest:
+            for key in _LIVE_DEPENDENCIES:
+                dependency_states[key].reason_code = "local_evidence_sufficient"
             trace.append("本地/指南相关性达标，按优先级规则跳过实时 API")
         elif not live_enabled:
             trace.append("实时 API 已关闭，使用离线快照兜底")
+        else:
+            for key in _LIVE_DEPENDENCIES:
+                dependency_states[key].reason_code = "mode_excluded"
 
         pooled = self._build_pool(observer, "final", static_chunks, live_documents)
         ranked = observer.call("rerank", self.reranker.rerank, question, pooled, top_k=len(pooled))
         rerank_status = self.reranker.status
         if self.settings.rerank_backend not in {"deterministic", "cross_encoder"}:
             rerank_status = BackendStatus(
-                requested=self.settings.rerank_backend,
+                requested="invalid",
                 actual="deterministic",
                 degraded=True,
-                reason=f"不支持的 RERANK_BACKEND={self.settings.rerank_backend}",
+                reason="rerank_backend_invalid",
             )
         if rerank_status.degraded:
+            if rerank_status.reason != "rerank_backend_invalid":
+                rerank_status = BackendStatus(requested="cross_encoder", actual="deterministic", degraded=True,
+                                              reason="rerank_backend_unavailable")
             trace.append(
                 f"{rerank_status.requested} 重排不可用，已降级为 "
                 f"{rerank_status.actual}：{rerank_status.reason}"
@@ -360,6 +410,10 @@ class EvidencePipeline:
             for status in (retrieval_status, rerank_status)
             if status.degraded and status.reason
         ]
+        degradation_reasons.extend(
+            f"{key}:{state.reason_code}" for key, state in dependency_states.items()
+            if state.status in {"error", "fallback"}
+        )
 
         direct_entries, background_entries = observer.call("question_coverage", partition, spec, entries)
         observer.candidates("question_direct", direct_entries)
@@ -383,6 +437,7 @@ class EvidencePipeline:
         relevant_entries = sorted(direct_entries + background_entries, key=lambda entry: entry.citation_number)
         evidence_gate = observer.call("evidence_gate", self._assess_top8_evidence, spec, relevant_entries)
         if evidence_gate.refused:
+            dependency_states["generator"].reason_code = "evidence_gate"
             answer = refusal_answer(evidence_gate)
             trace.append(f"触发证据门控：{evidence_gate.code}；未调用生成器")
             return PipelineResult(
@@ -400,6 +455,7 @@ class EvidencePipeline:
                 rerank_backend=rerank_status.actual,
                 degraded=bool(degradation_reasons),
                 degradation_reasons=degradation_reasons,
+                dependency_states=dependency_states,
             )
 
         generation_entries = observer.call("generation_selection", select_complementary,
@@ -409,6 +465,7 @@ class EvidencePipeline:
         observer.candidates("generation_top5", generation_entries)
         generation_gate = observer.call("generation_gate", self._assess_generation_evidence, spec, generation_entries)
         if generation_gate.refused:
+            dependency_states["generator"].reason_code = "generation_gate"
             trace.append(f"生成证据包门控：{generation_gate.code}；未调用生成器")
             return PipelineResult(
                 question=question, mode=canonical_mode, answer=refusal_answer(generation_gate), entries=entries,
@@ -416,6 +473,7 @@ class EvidencePipeline:
                 generation_entry_ids=[entry.id for entry in generation_entries], used_live_api=used_live,
                 elapsed_ms=int((time.perf_counter()-started)*1000), retrieval_backend=retrieval_status.actual,
                 rerank_backend=rerank_status.actual, degraded=bool(degradation_reasons), degradation_reasons=degradation_reasons,
+                dependency_states=dependency_states,
             )
         trace.append(
             "互补证据包："
@@ -423,7 +481,17 @@ class EvidencePipeline:
                 f"[{entry.citation_number}]{entry.evidence_role}" for entry in generation_entries
             )
         )
+        generation_started = time.perf_counter()
         answer = observer.call("generate", generate, spec.safe_query or question, generation_entries, self.settings)
+        dependency_states["generator"] = answer.generation_state or DependencyState(
+            status="success", reason_code="completed" if self.settings.llm_api_key else "offline_extractive",
+            elapsed_ms=max(0, int((time.perf_counter() - generation_started) * 1000)),
+            result_count=len(answer.paragraphs),
+            actual_backend="llm" if answer.generator.startswith("llm:") else "extractive")
+        generator_state = dependency_states["generator"]
+        if generator_state.status == "fallback":
+            degradation_reasons.append(f"generator:{generator_state.reason_code}")
+            trace.append(f"LLM 不可用，已回退为抽取式生成：{generator_state.reason_code}")
         claim_ids = [f"claim:{i+1:04d}" for i in range(len(answer.paragraphs))]
         observer.answer("raw", answer, claim_ids)
         metadata_safe = sanitize_generated_metadata(answer)
@@ -440,7 +508,7 @@ class EvidencePipeline:
                 trace.append(f"问题相关性检查：移除 {before-len(answer.paragraphs)} 条未覆盖关键条件的陈述")
         if changed_fields:
             observer.answer("metadata_sanitized", answer, claim_ids, replaced_auxiliary_fields=changed_fields)
-        trace.append(f"结构化生成完成：{answer.generator}")
+        trace.append(f"结构化生成完成：{generator_state.actual_backend}")
         if answer.refused:
             trace.append("生成器返回 refused=true，跳过引用校验")
             check = None
@@ -487,4 +555,5 @@ class EvidencePipeline:
             rerank_backend=rerank_status.actual,
             degraded=bool(degradation_reasons),
             degradation_reasons=degradation_reasons,
+            dependency_states=dependency_states,
         )

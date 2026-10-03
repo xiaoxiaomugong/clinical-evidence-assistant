@@ -36,6 +36,23 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      EVIDENCE_ASSISTANT_ENV_FILE: /dev/null
+      ENABLE_LIVE_APIS: "false"
+      ENABLE_SUPABASE: "false"
+      LLM_API_KEY: ""
+      PUBMED_API_KEY: ""
+      NCBI_EMAIL: ""
+      SUPABASE_URL: ""
+      SUPABASE_PUBLISHABLE_KEY: ""
+      SUPABASE_SECRET_KEY: ""
+      MODEL_LOCAL_FILES_ONLY: "true"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      RETRIEVAL_BACKEND: legacy
+      RERANK_BACKEND: deterministic
+      CANDIDATE_POOL_POLICY: source_preserving
+      TOP8_SELECTION_POLICY: legacy
     strategy:
       fail-fast: false
       matrix:
@@ -81,3 +98,7 @@ jobs:
           ENABLE_LIVE_APIS: "false"
           LLM_API_KEY: ""
         run: clinical-evidence-ui --check
+      - name: Freeze current C0 and check two isolated repeats
+        run: |
+          python scripts/freeze_current_baseline.py --output data/eval_runs/ci-current-c0
+          python -m eval.run_p0 --baseline-source current --baseline data/eval_runs/ci-current-c0 --output data/eval_runs/ci-regression --profiles C0 --arms G1

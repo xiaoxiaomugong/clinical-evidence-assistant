@@ -40,6 +40,7 @@ def clinicaltrials_search(spec: QuerySpec, top_k: int = 5, cfg: Settings = setti
         timeout=cfg.request_timeout,
         min_interval=max(cfg.rate_limit_seconds, 0.5),
         max_attempts=cfg.api_max_attempts,
+        retry_sleep_cap_seconds=cfg.api_retry_sleep_cap_seconds,
     )
     response.raise_for_status()
     documents: List[Document] = []

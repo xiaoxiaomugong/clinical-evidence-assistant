@@ -42,6 +42,98 @@ def create_run_directory(output: Path) -> Path:
     return output
 
 
+def git_identity(root: Path) -> dict:
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root,
+                                         stderr=subprocess.DEVNULL, text=True).strip()
+        dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=root,
+                                            stderr=subprocess.DEVNULL, text=True).strip())
+        return {'commit': commit, 'working_tree_dirty': dirty}
+    except (OSError, subprocess.CalledProcessError):
+        return {'commit': 'unknown', 'working_tree_dirty': None}
+
+
+def freeze_current_baseline(output: Path, source_root: Path = ROOT) -> dict:
+    """Freeze a new current C0 snapshot, without importing Settings or loading .env."""
+    from eval.offline_runner import load_dataset, settings_values
+    source_root = source_root.resolve()
+    output = output.resolve()
+    if output == source_root or output in source_root.parents:
+        raise ValueError('Baseline output cannot contain the source tree')
+    dataset = source_root / 'eval/test_set.json'
+    load_dataset(dataset)
+    if not list((source_root / 'data/knowledge_pages').glob('*.json')):
+        raise ValueError('Required knowledge corpus is missing')
+    for name in ('data/raw/local_corpus.json', 'data/corpus_version.json'):
+        if not (source_root / name).is_file():
+            raise ValueError('Required C0 corpus is missing')
+    run = create_run_directory(output)
+    files = []
+    for name in ('data/raw/local_corpus.json', 'data/corpus_version.json'):
+        _copy(source_root / name, run / 'frozen' / name, files)
+    for source in sorted((source_root / 'data/knowledge_pages').glob('*.json')):
+        _copy(source, run / 'frozen/data/knowledge_pages' / source.name, files)
+    _copy(dataset, run / 'frozen/eval/test_set.json', files)
+    _copy(dataset, run / 'frozen/eval/dataset.json', files)
+    for directory in ('src', 'eval', 'scripts'):
+        for source in sorted((source_root / directory).rglob('*.py')):
+            _copy(source, run / 'code/current' / source.relative_to(source_root), files)
+    for name in ('config.py', 'app.py', 'pyproject.toml', 'requirements.txt'):
+        _copy(source_root / name, run / 'code/current' / name, files)
+    values = settings_values(run, 'C0', 'G1', run / 'runtime_cache')
+    write_json(run / 'settings.json', values)
+    files.append({'source': str(run / 'settings.json'), 'path': str(run / 'settings.json'),
+                  'sha256': sha256(run / 'settings.json'), 'bytes': (run / 'settings.json').stat().st_size})
+    # Relative paths make frozen input verification independent of the checkout.
+    records = [{**record, 'path': str(Path(record['path']).relative_to(run))} for record in files]
+    write_json(run / 'input_manifest.json', records)
+    info = {'schema_version': '1', 'source_kind': 'current_c0', 'run_id': run.name,
+            **git_identity(source_root), 'created_at': datetime.now(timezone.utc).isoformat(),
+            'input_manifest_sha256': sha256(run / 'input_manifest.json'),
+            'dataset_sha256': sha256(run / 'frozen/eval/test_set.json'),
+            'settings_sha256': sha256(run / 'settings.json'), 'profiles': ['C0'],
+            'python': sys.version, 'dependencies': dict(sorted(
+                (dist.metadata['Name'], dist.version) for dist in importlib.metadata.distributions())),
+            'scope': 'Current C0 engineering baseline; not a historical experiment or clinical validation',
+            'unavailable': {'historical_experiment': 'not_executed', 'C1': 'not_included',
+                            'independent_clinical_review': 'not_executed'}}
+    write_json(run / 'manifest.json', info)
+    return info
+
+
+def load_baseline_metadata(baseline: Path, source: str) -> dict:
+    path = baseline / 'manifest.json'
+    if not path.is_file():
+        raise ValueError('Baseline manifest is missing; provenance cannot be verified')
+    info = json.loads(path.read_text(encoding='utf-8'))
+    if source == 'current':
+        if info.get('schema_version') != '1' or info.get('source_kind') != 'current_c0':
+            raise ValueError('Baseline manifest is not a current C0 snapshot')
+        manifest = baseline / 'input_manifest.json'
+        if not manifest.is_file() or sha256(manifest) != info.get('input_manifest_sha256'):
+            raise ValueError('Baseline input manifest hash mismatch')
+        for record in json.loads(manifest.read_text(encoding='utf-8')):
+            target = (baseline / record['path']).resolve()
+            if baseline.resolve() not in target.parents:
+                raise ValueError('Baseline manifest path escapes snapshot')
+            if not target.is_file() or sha256(target) != record['sha256']:
+                raise ValueError('Baseline input hash mismatch')
+        return info
+    if info.get('source_kind') == 'current_c0' or info.get('commit') != BASELINE_COMMIT:
+        raise ValueError('Baseline is not the required historical experiment')
+    # Historical artifacts must carry checksums; do not infer provenance from a folder name.
+    manifest = baseline / 'input_manifest.json'
+    if not manifest.is_file() or sha256(manifest) != info.get('input_manifest_sha256'):
+        raise ValueError('Historical baseline input manifest hash cannot be verified')
+    for record in json.loads(manifest.read_text(encoding='utf-8')):
+        target = Path(record['path'])
+        if not target.is_absolute():
+            target = baseline / target
+        if baseline.resolve() not in target.resolve().parents or not target.is_file() or sha256(target) != record['sha256']:
+            raise ValueError('Historical baseline input hash mismatch')
+    return info
+
+
 def clean_environment(code_root: Path, cache: Path, source_root: Path = None) -> dict:
     """Allowlist constructed from constants and paths, never inherited credentials."""
     source_root = source_root or code_root
@@ -74,7 +166,8 @@ def _copy(source: Path, destination: Path, manifest: list) -> None:
 
 
 def freeze_inputs(run: Path, baseline: Path, dataset: Path, qrels: Path = None,
-                  index: Path = None, include_pdf: bool = True, include_b0: bool = True) -> dict:
+                  index: Path = None, include_pdf: bool = True, include_b0: bool = True,
+                  include_reference: bool = False) -> dict:
     files = []
     for name in ("local_corpus.json",):
         _copy(baseline / "frozen/data/raw" / name, run / "frozen/data/raw" / name, files)
@@ -100,6 +193,17 @@ def freeze_inputs(run: Path, baseline: Path, dataset: Path, qrels: Path = None,
             _copy(source, current / source.relative_to(ROOT), files)
     for name in ("config.py", "pyproject.toml"):
         _copy(ROOT / name, current / name, files)
+    if include_reference:
+        # Use the baseline's frozen implementation, not today's code, for the reference.
+        records = json.loads((baseline / 'input_manifest.json').read_text(encoding='utf-8'))
+        for record in records:
+            relative = Path(record['path'])
+            if relative.parts[:2] == ('code', 'current'):
+                _copy(baseline / relative, run / 'reference' / relative, files)
+        # Both implementations see the exact same effective dataset and C0 data.
+        for source in sorted((run / 'frozen').rglob('*')):
+            if source.is_file():
+                _copy(source, run / 'reference/frozen' / source.relative_to(run / 'frozen'), files)
     if include_b0:
         archive = subprocess.check_output(["git", "archive", BASELINE_COMMIT, "src", "config.py"], cwd=ROOT)
         historical = run / "code/B0"
@@ -136,7 +240,8 @@ def _semantic_result(row):
 
 def engineering_gates(baseline: dict, candidate: dict, original_pairs_retained=None) -> dict:
     def compare(metric):
-        before, after = baseline["quality"][metric]["value"], candidate["quality"][metric]["value"]
+        before = baseline['quality'].get(metric, {}).get('value')
+        after = candidate['quality'].get(metric, {}).get('value')
         return {"passed": after >= before if before is not None and after is not None else None,
                 "baseline": before, "candidate": after}
     recall = candidate["quality"]["recall_at_8"]["value"]
@@ -151,6 +256,8 @@ def engineering_gates(baseline: dict, candidate: dict, original_pairs_retained=N
             mismatched.append(qid)
     return {"recall_regression": compare("recall_at_8"), "ndcg_regression": compare("ndcg_at_8"),
             "coverage_regression": compare("key_point_coverage"),
+            "citation_regression": compare('citation_accuracy'),
+            "support_regression": compare('supported_claim_rate'),
             "retrieval_benefit": {"passed": recall >= .875 if recall is not None else None, "target": .875, "value": recall},
             "original_retention": {"passed": original_pairs_retained == 5 if original_pairs_retained is not None else None,
                                     "numerator": original_pairs_retained, "denominator": 5},
@@ -163,6 +270,7 @@ def engineering_gates(baseline: dict, candidate: dict, original_pairs_retained=N
 
 def build_summary(run: Path, profiles: list, arms: list, commands: list, frozen_check: dict) -> dict:
     configurations, stability, baseline_alignment, gates, performance = {}, {}, {}, {}, {}
+    references, reference_required = {}, False
     for profile in profiles:
         for arm in arms:
             key = profile + "/" + arm
@@ -199,6 +307,12 @@ def build_summary(run: Path, profiles: list, arms: list, commands: list, frozen_
                          row.get("stage") in {"reranked", "top8"} and "29507099" in str(row.get("doc_id", ""))]}
     for profile in profiles:
         baseline = configurations.get(profile + "/B0") or configurations.get(profile + "/B1")
+        if not baseline:
+            reference_required = True
+            rows = read_rows(run / 'reference' / profile / 'G1/repeat_1/results.jsonl')
+            if rows:
+                baseline = summarize_results(rows)
+                references[profile + '/G1'] = baseline
         if baseline:
             for arm in arms:
                 key = profile + "/" + arm
@@ -213,13 +327,47 @@ def build_summary(run: Path, profiles: list, arms: list, commands: list, frozen_
                     after = candidate_perf["all_requests"]["p95_ms"]
                     performance[key]["relative_to_B1_p95"] = {"ratio": after / before if before else None,
                                                                 "review_alarm": after > before * 1.2 if before else None}
+    audit_paths = list(run.glob('*/*/*/network_audit.json')) + list((run / 'reference').glob('*/*/*/network_audit.json'))
+    audits = [json.loads(path.read_text(encoding='utf-8')) for path in sorted(audit_paths)]
     return {"scope": "P0 engineering regression; not independent clinical validation",
             "configurations": configurations, "repeat_stability": stability,
             "baseline_alignment": baseline_alignment, "candidate_diagnostics": diagnostics,
             "engineering_gates": gates, "performance": performance,
+            "reference_configurations": references, "current_reference_required": reference_required,
             "commands": commands, "artifact_integrity": frozen_check,
+            "network_audits": audits,
             "failed_commands": [command for command in commands if command["exit_code"]],
             "formal_quality": {"status": "N/A", "reason": "Independent labels, reviewer judgments and blind sets unavailable"}}
+
+
+def regression_accepted(summary: dict) -> bool:
+    if summary.get('current_reference_required'):
+        if not summary.get('reference_configurations') or not summary.get('engineering_gates'):
+            return False
+    for configuration in summary.get('configurations', {}).values():
+        for outcome in configuration.get('question_outcomes', {}).values():
+            if (outcome.get('expected_answer_status') is not None
+                    and (outcome.get('run_status') != 'success'
+                         or outcome.get('answer_status') != outcome['expected_answer_status'])):
+                return False
+    for gates in summary.get('engineering_gates', {}).values():
+        for name in ('recall_regression', 'ndcg_regression', 'coverage_regression',
+                     'citation_regression', 'support_regression'):
+            gate = gates.get(name, {})
+            if gate.get('baseline') is not None and gate.get('passed') is not True:
+                return False
+        behavior = gates['answer_behavior']
+        if behavior.get('mismatched_ids') or (behavior.get('evaluated_count') and behavior['passed'] is not True):
+            return False
+        if gates['run_errors']['passed'] is not True:
+            return False
+    return (not summary['failed_commands'] and bool(summary['repeat_stability'])
+            and all(row['stable'] for row in summary['repeat_stability'].values())
+            and summary['artifact_integrity'].get('frozen_unchanged') is True
+            and summary['artifact_integrity'].get('baseline_artifacts_unchanged') is True
+            and bool(summary['network_audits'])
+            and all(row.get('selftest', {}).get('passed') is True
+                    and row.get('unexpected_network_attempts') == 0 for row in summary['network_audits']))
 
 
 def write_report(run: Path, summary: dict) -> None:
@@ -254,21 +402,29 @@ def main(argv=None) -> int:
     parser.add_argument("--profiles", nargs="+", choices=("C0", "C1"), default=["C0", "C1"])
     parser.add_argument("--arms", nargs="+", choices=("B0", "B1", "R1", "I1", "G1", "R2", "D1", "RD"), default=["B0", "B1", "R1", "I1", "G1", "R2"])
     parser.add_argument("--baseline", type=Path, default=ROOT / "data/eval_runs" / BASELINE_ID)
+    parser.add_argument("--baseline-source", choices=("historical", "current"), default="historical",
+                        help="Explicit provenance; current snapshots support C0/G1 only")
     parser.add_argument("--dataset", type=Path, help="Explicit controlled dataset; default frozen historical 15 questions")
     parser.add_argument("--qrels", type=Path, help="Optional independent graded qrels; never rewrites legacy qrels")
     parser.add_argument("--index", type=Path, help="Candidate corpus SQLite for D1/RD only")
     parser.add_argument("--performance", action="store_true", help="Also run concurrency 1/4, 10 warmups and >=100 trials")
+    parser.add_argument('--shared-pipeline', action='store_true', help='Measure actual shared Web/Tool service instead of a pipeline pool')
     parser.add_argument("--trials", type=int, default=120)
     parser.add_argument("--save-questions", action="store_true", help="Persist controlled deidentified dataset text in recorder")
     args = parser.parse_args(argv)
     if args.performance and args.trials < 100:
         parser.error("--trials must be at least 100")
+    if args.shared_pipeline and (not args.performance or args.arms != ['G1']):
+        parser.error('--shared-pipeline requires --performance --arms G1')
     if any(arm in {"D1", "RD"} for arm in args.arms) and (args.index is None or args.profiles != ["C1"]):
         parser.error("D1/RD require --index and --profiles C1")
     if len(set(args.profiles)) != len(args.profiles) or len(set(args.arms)) != len(args.arms):
         parser.error("Duplicate profiles/arms are not allowed")
     if args.output.resolve() == args.baseline.resolve() or args.baseline.resolve() in args.output.resolve().parents:
         parser.error("Output must be outside the historical baseline directory")
+    if args.baseline_source == 'current' and (args.profiles != ['C0'] or args.arms != ['G1']):
+        parser.error('Current C0 snapshots require --profiles C0 --arms G1; historical arms are unavailable')
+    baseline_info = load_baseline_metadata(args.baseline.resolve(), args.baseline_source)
     from eval.offline_runner import load_dataset
     dataset = (args.dataset or args.baseline / "frozen/eval/test_set.json").resolve()
     load_dataset(dataset)
@@ -277,12 +433,17 @@ def main(argv=None) -> int:
                        for path in sorted(args.baseline.rglob("*")) if path.is_file()}
     write_json(run / "baseline_artifact_hashes.json", baseline_hashes)
     frozen = freeze_inputs(run, args.baseline.resolve(), dataset, args.qrels, args.index,
-                           include_pdf="C1" in args.profiles, include_b0="B0" in args.arms)
+                           include_pdf="C1" in args.profiles, include_b0="B0" in args.arms,
+                           include_reference=args.baseline_source == 'current')
     diff = subprocess.check_output(["git", "diff", "--binary", "HEAD", "--", "src", "eval", "tests", "scripts", ".github", "pyproject.toml"], cwd=ROOT)
     (run / "workspace.patch").write_bytes(diff)
     manifest = {"run_id": run.name, "baseline_run_id": args.baseline.name,
-                "baseline_commit": BASELINE_COMMIT, "created_at": datetime.now(timezone.utc).isoformat(),
-                "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+                "baseline_commit": baseline_info.get('commit', 'unknown'),
+                "baseline_source_kind": baseline_info.get('source_kind', 'historical'),
+                "reference_code_commit": baseline_info.get('commit', 'unknown') if args.baseline_source == 'current' else None,
+                "reference_input_manifest_sha256": baseline_info.get('input_manifest_sha256') if args.baseline_source == 'current' else None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                **git_identity(ROOT),
                 "workspace_diff_sha256": hashlib.sha256(diff).hexdigest(),
                 "input_manifest_sha256": sha256(run / "input_manifest.json"),
                 "baseline_artifact_hashes_sha256": sha256(run / "baseline_artifact_hashes.json"),
@@ -316,6 +477,8 @@ def main(argv=None) -> int:
                            "--arm", arm, "--repeat", str(repeat)]
                 if trials:
                     command += ["--performance", str(trials)]
+                    if args.shared_pipeline:
+                        command += ['--shared-pipeline']
                 if args.save_questions:
                     command += ["--save-questions"]
                 log = run / "logs" / (profile + "_" + arm + "_" + label + ".log")
@@ -326,6 +489,21 @@ def main(argv=None) -> int:
                 commands.append({"profile": profile, "arm": arm, "repeat": repeat, "action": label,
                                  "exit_code": completed.returncode, "log": str(log.relative_to(run))})
                 write_json(run / "commands.json", commands)
+    if args.baseline_source == 'current':
+        cache = run / 'runtime_cache/reference'
+        for directory in (cache / 'home', cache / 'tmp'):
+            directory.mkdir(parents=True)
+        code = run / 'reference/code/current'
+        command = [sys.executable, '-m', 'eval.offline_runner', '--run', str(run / 'reference'),
+                   '--profile', 'C0', '--arm', 'G1', '--repeat', '1']
+        log = run / 'logs/C0_G1_reference.log'
+        print('RUN C0 G1 frozen_reference', flush=True)
+        with log.open('w', encoding='utf-8') as handle:
+            completed = subprocess.run(command, env=clean_environment(code, cache), cwd=code,
+                                       stdout=handle, stderr=subprocess.STDOUT)
+        commands.append({'profile': 'C0', 'arm': 'G1', 'repeat': 1, 'action': 'frozen_reference',
+                         'exit_code': completed.returncode, 'log': str(log.relative_to(run))})
+        write_json(run / 'commands.json', commands)
     integrity = verify_frozen(frozen["files"])
     changed_baseline = [path for path, expected in baseline_hashes.items()
                         if not (args.baseline / path).exists() or sha256(args.baseline / path) != expected]
@@ -336,7 +514,7 @@ def main(argv=None) -> int:
     manifest["settings"] = {str(path.relative_to(run)): json.loads(path.read_text()) for path in run.glob("*/*/*/settings.json")}
     write_json(run / "manifest.json", manifest)
     print(str(run / "report.md"), flush=True)
-    return 1 if summary["failed_commands"] or not integrity["frozen_unchanged"] or changed_baseline else 0
+    return 0 if regression_accepted(summary) else 1
 
 
 if __name__ == "__main__":

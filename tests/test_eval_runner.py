@@ -327,3 +327,160 @@ def test_identity_diagnostic_arm_uses_candidate_policy_only(tmp_path):
     cfg = settings_values(tmp_path, 'C0', 'I1', tmp_path/'cache')
     assert cfg['candidate_pool_policy'] == 'source_preserving'
     assert cfg['top8_selection_policy'] == 'legacy'
+
+
+def test_current_c0_freeze_has_verifiable_inputs_without_history(tmp_path, monkeypatch):
+    from eval import run_p0
+
+    freeze = getattr(run_p0, 'freeze_current_baseline', None)
+    assert callable(freeze), 'current C0 freeze API is missing'
+    monkeypatch.setenv('LLM_API_KEY', 'SYNTHETIC-SECRET-NOT-FROZEN')
+    output = tmp_path / 'current'
+    info = freeze(output)
+    assert info['source_kind'] == 'current_c0'
+    assert info['commit'] != run_p0.BASELINE_COMMIT
+    assert len(json.loads((output / 'frozen/eval/test_set.json').read_text())) == 15
+    loaded = run_p0.load_baseline_metadata(output, 'current')
+    assert loaded['commit'] == info['commit']
+    manifest = json.loads((output / 'input_manifest.json').read_text())
+    assert all(run_p0.sha256(output / item['path']) == item['sha256'] for item in manifest)
+    assert 'SYNTHETIC-SECRET-NOT-FROZEN' not in (output / 'settings.json').read_text()
+    assert not (output / 'frozen/data/raw/pdf_collection.sqlite3').exists()
+    with pytest.raises(FileExistsError):
+        freeze(output)
+
+
+def test_current_c0_cannot_impersonate_history_or_run_historical_arms(tmp_path):
+    from eval import run_p0
+
+    freeze = getattr(run_p0, 'freeze_current_baseline', None)
+    assert callable(freeze), 'current C0 freeze API is missing'
+    baseline = tmp_path / 'current'
+    freeze(baseline)
+    with pytest.raises(ValueError, match='historical'):
+        run_p0.load_baseline_metadata(baseline, 'historical')
+    with pytest.raises(SystemExit):
+        run_p0.main(['--baseline-source', 'current', '--baseline', str(baseline),
+                     '--output', str(tmp_path / 'run'), '--profiles', 'C0', '--arms', 'B1'])
+    assert not (tmp_path / 'run').exists()
+
+
+def test_current_c0_rejects_changed_input_and_wrong_source(tmp_path):
+    from eval import run_p0
+
+    freeze = getattr(run_p0, 'freeze_current_baseline', None)
+    assert callable(freeze), 'current C0 freeze API is missing'
+    baseline = tmp_path / 'current'
+    freeze(baseline)
+    (baseline / 'frozen/eval/test_set.json').write_text('[]')
+    with pytest.raises(ValueError, match='hash'):
+        run_p0.load_baseline_metadata(baseline, 'current')
+    with pytest.raises(ValueError, match='manifest'):
+        run_p0.load_baseline_metadata(tmp_path / 'missing', 'current')
+
+
+def test_frozen_current_baseline_runs_two_network_denied_repeats(tmp_path):
+    from eval import run_p0
+
+    freeze = getattr(run_p0, 'freeze_current_baseline', None)
+    assert callable(freeze), 'current C0 freeze API is missing'
+    baseline, output = tmp_path / 'baseline', tmp_path / 'run'
+    info = freeze(baseline)
+    assert run_p0.main(['--baseline-source', 'current', '--baseline', str(baseline),
+                       '--output', str(output), '--profiles', 'C0', '--arms', 'G1']) == 0
+    manifest = json.loads((output / 'manifest.json').read_text())
+    summary = json.loads((output / 'summary.json').read_text())
+    assert manifest['baseline_commit'] == info['commit']
+    assert manifest['baseline_source_kind'] == 'current_c0'
+    assert summary['repeat_stability']['C0/G1']['stable']
+    assert summary['configurations']['C0/G1']['status_counts']['success'] == 15
+    assert summary['reference_configurations']['C0/G1']['status_counts']['success'] == 15
+    assert summary['engineering_gates']['C0/G1']['answer_behavior']['passed']
+    for path in output.glob('C0/G1/repeat_*/network_audit.json'):
+        audit = json.loads(path.read_text())
+        assert audit['selftest']['passed'] and audit['unexpected_network_attempts'] == 0
+
+
+def test_shared_service_performance_measures_one_pipeline_with_answerable_requests(tmp_path):
+    from eval.offline_runner import run_performance, load_dataset, settings_values, construct_settings
+    from evidence_assistant.config import Settings
+
+    root = Path(__file__).resolve().parents[1]
+    values = settings_values(tmp_path, 'C0', 'G1', tmp_path / 'cache')
+    values.update(knowledge_dir=root / 'data/knowledge_pages',
+                  local_corpus_path=root / 'data/raw/local_corpus.json')
+    cfg = construct_settings(Settings, values)
+    result = run_performance(cfg, 'G1', load_dataset(root / 'eval/test_set.json'), 100,
+                             shared_pipeline=True)
+    for group in result['profiles']:
+        assert group['pipeline_count'] == 1
+        assert group['actual_answered_count'] == 100
+        assert group['errors'] == 0
+        assert group['timeouts'] is None
+        assert group['queue']['p95_ms'] is not None
+
+
+@pytest.mark.parametrize('failure', ['repeat', 'network', 'selftest', 'integrity', 'commands'])
+def test_regression_acceptance_rejects_unstable_or_unisolated_runs(failure):
+    from eval import run_p0
+
+    accept = getattr(run_p0, 'regression_accepted', None)
+    assert callable(accept), 'regression acceptance gate is missing'
+    summary = {'failed_commands': [], 'repeat_stability': {'C0/G1': {'stable': True}},
+               'artifact_integrity': {'frozen_unchanged': True, 'baseline_artifacts_unchanged': True},
+               'network_audits': [{'selftest': {'passed': True}, 'unexpected_network_attempts': 0}]}
+    assert accept(summary)
+    if failure == 'repeat':
+        summary['repeat_stability']['C0/G1']['stable'] = False
+    elif failure == 'network':
+        summary['network_audits'][0]['unexpected_network_attempts'] = 1
+    elif failure == 'selftest':
+        summary['network_audits'][0]['selftest']['passed'] = False
+    elif failure == 'integrity':
+        summary['artifact_integrity']['frozen_unchanged'] = False
+    else:
+        summary['failed_commands'] = [{'exit_code': 1}]
+    assert not accept(summary)
+
+
+def test_current_regression_rejects_stable_all_refusal_without_reference(tmp_path):
+    from eval.run_p0 import build_summary, regression_accepted
+    from eval.run_record import write_json
+
+    row = {'question_id': 'answerable', 'run_status': 'success', 'answer_status': 'refused',
+           'should_answer': True, 'legacy': {'refusal_correct': False}}
+    for repeat in (1, 2):
+        directory = tmp_path / 'C0/G1' / ('repeat_%s' % repeat)
+        directory.mkdir(parents=True)
+        (directory / 'results.jsonl').write_text(json.dumps(row) + '\n')
+        write_json(directory / 'network_audit.json', {'selftest': {'passed': True},
+                                                    'unexpected_network_attempts': 0})
+    summary = build_summary(tmp_path, ['C0'], ['G1'], [],
+                            {'frozen_unchanged': True, 'baseline_artifacts_unchanged': True})
+    assert summary['repeat_stability']['C0/G1']['stable']
+    assert not regression_accepted(summary)
+
+
+@pytest.mark.parametrize('metric', ['recall_at_8', 'ndcg_at_8', 'key_point_coverage',
+                                   'citation_accuracy', 'supported_claim_rate'])
+def test_current_regression_rejects_quality_loss_against_frozen_reference(tmp_path, metric):
+    from eval.run_p0 import build_summary, regression_accepted
+    from eval.run_record import write_json
+
+    baseline = {'question_id': 'answerable', 'run_status': 'success', 'answer_status': 'answered',
+                'should_answer': True, 'legacy': {'refusal_correct': True,
+                'recall_at_8': 1.0, 'ndcg_at_8': 1.0, 'key_point_coverage': 1.0,
+                'citation_accuracy': 1.0, 'supported_claim_rate': 1.0}}
+    candidate = json.loads(json.dumps(baseline))
+    candidate['legacy'][metric] = 0.5
+    for directory, row in [(tmp_path / 'reference/C0/G1/repeat_1', baseline),
+                           (tmp_path / 'C0/G1/repeat_1', candidate),
+                           (tmp_path / 'C0/G1/repeat_2', candidate)]:
+        directory.mkdir(parents=True)
+        (directory / 'results.jsonl').write_text(json.dumps(row) + '\n')
+        write_json(directory / 'network_audit.json', {'selftest': {'passed': True},
+                                                    'unexpected_network_attempts': 0})
+    summary = build_summary(tmp_path, ['C0'], ['G1'], [],
+                            {'frozen_unchanged': True, 'baseline_artifacts_unchanged': True})
+    assert summary['repeat_stability']['C0/G1']['stable']
+    assert not regression_accepted(summary)

@@ -98,6 +98,17 @@ class AnswerParagraph:
 
 
 @dataclass
+class DependencyState:
+    """Content-free outcome of one dependency within one request."""
+
+    status: str = "not_attempted"
+    reason_code: str = "not_started"
+    elapsed_ms: int = 0
+    result_count: int = 0
+    actual_backend: str = ""
+
+
+@dataclass
 class Answer:
     refused: bool
     paragraphs: List[AnswerParagraph] = field(default_factory=list)
@@ -110,6 +121,7 @@ class Answer:
     generator: str = "extractive"
     original_paragraph_count: int = 0
     removed_paragraph_count: int = 0
+    generation_state: Optional[DependencyState] = None
 
 
 @dataclass
@@ -164,6 +176,10 @@ class PipelineResult:
     rerank_backend: str = "not_run"
     degraded: bool = False
     degradation_reasons: List[str] = field(default_factory=list)
+    dependency_states: Dict[str, DependencyState] = field(default_factory=dict)
+    request_id: str = ""
+    queue_elapsed_ms: int = 0
+    execution_elapsed_ms: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

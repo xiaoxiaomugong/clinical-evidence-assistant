@@ -1,5 +1,7 @@
 import os
 import time
+import pytest
+import requests
 
 from evidence_assistant.retrievers import common
 from evidence_assistant.retrievers.clinicaltrials import _clinicaltrials_query
@@ -59,3 +61,52 @@ def test_clinicaltrials_query_quotes_hyphenated_terms():
 
     assert '"glp-1"' in query
     assert " AND (" in query
+
+
+@pytest.mark.parametrize("retry_after, expected", [
+    ("nan", .4), ("Infinity", .4), ("-3", 0), ("999999999999999999999", 5),
+    ("not a date", .4), (None, .4),
+    ("Thu, 01 Jan 1970 00:20:00 GMT", 5),
+    ("Thu, 01 Jan 1970 00:16:42 GMT", 2),
+    ("Thu, 01 Jan 1970 00:00:00 GMT", 0),
+])
+def test_retry_after_wait_is_finite_and_capped(monkeypatch, retry_after, expected):
+    sleeps, attempts = [], []
+    class FakeResponse:
+        def __init__(self, status):
+            self.status_code = status
+            self.headers = {"Retry-After": retry_after}
+    def get(*args, **kwargs):
+        attempts.append(True)
+        return FakeResponse(429 if len(attempts) == 1 else 200)
+    monkeypatch.setattr(common.requests, "get", get)
+    monkeypatch.setattr(common.time, "sleep", sleeps.append)
+    monkeypatch.setattr(common.time, "time", lambda: 1000)
+    response = common.get_with_retry("cap-test", "https://example.test", params={}, timeout=1,
+                                     min_interval=0, max_attempts=2)
+    assert response.status_code == 200 and sleeps == [expected]
+
+
+def test_connection_backoff_respects_configured_cap(monkeypatch):
+    sleeps = []
+    def get(*args, **kwargs):
+        raise requests.Timeout("unsafe message")
+    monkeypatch.setattr(common.requests, "get", get)
+    monkeypatch.setattr(common.time, "sleep", sleeps.append)
+    with pytest.raises(requests.Timeout):
+        common.get_with_retry("connection-test", "https://example.test", params={}, timeout=1,
+                              min_interval=0, max_attempts=7, retry_sleep_cap_seconds=.5)
+    assert sleeps == [.4, .5, .5, .5, .5, .5]
+
+
+@pytest.mark.parametrize("cap", [float("nan"), float("inf"), -1])
+def test_invalid_retry_cap_uses_finite_default(monkeypatch, cap):
+    sleeps, attempts = [], []
+    class FakeResponse:
+        headers = {"Retry-After": "9999999999999999"}
+        status_code = 429
+    monkeypatch.setattr(common.requests, "get", lambda *a, **k: FakeResponse())
+    monkeypatch.setattr(common.time, "sleep", sleeps.append)
+    common.get_with_retry("invalid-cap-test", "https://example.test", params={}, timeout=1,
+                          min_interval=0, max_attempts=2, retry_sleep_cap_seconds=cap)
+    assert sleeps == [5.0]

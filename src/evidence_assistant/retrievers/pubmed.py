@@ -85,6 +85,7 @@ def pubmed_search(spec: QuerySpec, top_k: int = 5, cfg: Settings = settings) -> 
         timeout=cfg.request_timeout,
         min_interval=min_interval,
         max_attempts=cfg.api_max_attempts,
+        retry_sleep_cap_seconds=cfg.api_retry_sleep_cap_seconds,
     )
     response.raise_for_status()
     pmids = response.json().get("esearchresult", {}).get("idlist", [])
@@ -98,6 +99,7 @@ def pubmed_search(spec: QuerySpec, top_k: int = 5, cfg: Settings = settings) -> 
         timeout=cfg.request_timeout,
         min_interval=min_interval,
         max_attempts=cfg.api_max_attempts,
+        retry_sleep_cap_seconds=cfg.api_retry_sleep_cap_seconds,
     )
     fetched.raise_for_status()
     documents = _parse_pubmed(fetched.text)

@@ -346,6 +346,46 @@ python3 scripts/lint_knowledge_pages.py --strict
 
 ## 测试与评估
 
+### 上线后运行保障（第一轮）
+
+管理员可在实际部署环境运行只读、本地诊断。输出文件必须不存在；报告仅含配置白名单、
+版本、依赖和语料计数/哈希，不探测供应商，也不代表网站健康验收：
+
+```bash
+python scripts/runtime_diagnostics.py --output /tmp/cea-runtime-NEW.json
+```
+
+Web 和 Python Tool 共用输入校验（去掉首尾空白后 1–4000 字符）与同一 pipeline 的执行锁。
+默认最多等待 5 秒、最多 8 个排队请求；这是单进程保护。新提交失败会清理上次答案，
+显示固定提示与 request_id。运营日志使用 stderr JSON 白名单，不保存题干、正文、trace、
+完整异常或凭据；显式本地评测 recorder 仍单独使用。日志轮转由服务器日志设施负责。
+
+实时源、云检索和生成器的执行状态直接来自结构化诊断，空结果与故障分开。
+未配置 LLM key 的正常抽取式回答不会记为降级。`LLM_REQUEST_TIMEOUT` 默认 45 秒，
+表示一次 LLM HTTP 调用的超时；`API_RETRY_SLEEP_CAP_SECONDS` 默认 5 秒，限制每次重试等待。
+排队、调用超时和重试等待分别记录，当前没有全链路硬截止或进程级取消。
+
+干净克隆无需历史私有工件即可冻结当前 C0，并在禁止外网的子进程中重跑旧 15 题两次：
+
+```bash
+python scripts/freeze_current_baseline.py --output data/eval_runs/current-c0-NEW
+python -m eval.run_p0 --baseline-source current \
+  --baseline data/eval_runs/current-c0-NEW \
+  --output data/eval_runs/current-regression-NEW --profiles C0 --arms G1 \
+  --performance --shared-pipeline --trials 120
+```
+
+当前 C0 使用独立身份，只运行当前安全策略 G1；不冒充历史 B0/B1 或 C1 复现。
+两个输出目录都不可覆盖。manifest 记录当前提交及修改状态，输入清单冻结实际源码、
+数据、题集、配置和哈希。runner 另执行一次冻结源码参考运行，比较检索、覆盖、引用与
+陈述规则指标，并逐题核对旧应答/拒答标签；只有重复稳定且适用回归门禁通过才退出成功。
+这些规则指标不代表临床正确性。并发性能使用同一个 pipeline 和实际 Web/Tool 服务，记录
+锁排队与执行器调度等待；全链路超时率为 N/A。旧题指标属于工程回归，独立人评仍未完成。
+
+启动、自启接入、代理/WebSocket、日志保留、备份及完整版本回滚见
+[服务器运行手册](docs/server_operations.md)，本轮实际验证及未验收范围见
+[第一轮交付报告](docs/post_deployment_iteration1_report.md)。生产发布须另行确认。
+
 ```bash
 pytest -q
 python3 scripts/smoke_test.py

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import List
 
 import requests
 
 from .config import Settings, settings
-from .schemas import Answer, AnswerParagraph, Entry
+from .schemas import Answer, AnswerParagraph, DependencyState, Entry
 from .output_policy import EXTRACTIVE_LIMITATIONS
 from .answer_relevance import QuestionFocus
 from .query_rewrite import rewrite
+from .retrievers.common import dependency_error_code, finite_nonnegative_seconds
 
 
 COMMON_SAFETY_RULES = """规则：
@@ -47,17 +49,29 @@ def build_prompt(question: str, entries: List[Entry]) -> str:
 
 
 def _parse_answer(payload: dict, generator: str) -> Answer:
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid generator response")
+    if not isinstance(payload.get("refused", False), bool):
+        raise ValueError("Invalid generator response")
     refused = bool(payload.get("refused", False))
+    if not refused and "claims" not in payload and "paragraphs" not in payload:
+        raise ValueError("Invalid generator response")
     paragraphs = []
     raw_claims = payload.get("claims", payload.get("paragraphs", []))
+    if not isinstance(raw_claims, list):
+        raise ValueError("Invalid generator response")
     for item in raw_claims:
+        if (not isinstance(item, dict) or not isinstance(item.get("text"), str)
+                or not isinstance(item.get("citation_ids"), list)):
+            raise ValueError("Invalid generator response")
         text = str(item.get("text", "")).strip()
         citation_ids = []
         for value in item.get("citation_ids", []):
-            try:
-                citation_ids.append(int(value))
-            except (TypeError, ValueError):
-                continue
+            if isinstance(value, str) and value.strip().isascii() and value.strip().isdecimal():
+                value = int(value.strip())
+            if type(value) is not int or value <= 0:
+                raise ValueError("Invalid generator response")
+            citation_ids.append(value)
         if text:
             paragraphs.append(
                 AnswerParagraph(
@@ -67,6 +81,8 @@ def _parse_answer(payload: dict, generator: str) -> Answer:
                     certainty=str(item.get("certainty", "moderate")),
                 )
             )
+    if not refused and not paragraphs:
+        raise ValueError("Invalid generator response")
     return Answer(
         refused=refused,
         paragraphs=paragraphs,
@@ -97,14 +113,20 @@ def call_llm(prompt: str, cfg: Settings = settings) -> Answer:
         # DeepSeek V4 defaults to thinking mode. This application expects the
         # JSON response in message.content, so use its non-thinking mode.
         request_payload["thinking"] = {"type": "disabled"}
+    timeout = finite_nonnegative_seconds(cfg.llm_request_timeout, 45.0) or 45.0
     response = requests.post(
         f"{cfg.llm_base_url.rstrip('/')}/chat/completions",
         headers={"Authorization": f"Bearer {cfg.llm_api_key}", "Content-Type": "application/json"},
         json=request_payload,
-        timeout=45,
+        timeout=timeout,
     )
     response.raise_for_status()
-    content = response.json()["choices"][0]["message"]["content"]
+    try:
+        content = response.json()["choices"][0]["message"]["content"]
+        if not isinstance(content, str):
+            raise ValueError("Invalid generator response")
+    except (KeyError, IndexError, TypeError) as error:
+        raise ValueError("Invalid generator response") from error
     return _parse_answer(json.loads(content), generator=f"llm:{cfg.llm_model}")
 
 
@@ -138,10 +160,18 @@ def extractive_answer(question: str, entries: List[Entry], max_paragraphs: int =
 
 
 def generate(question: str, entries: List[Entry], cfg: Settings = settings) -> Answer:
-    prompt = build_prompt(question, entries)
+    started = time.perf_counter()
+    state = DependencyState(status="success", reason_code="offline_extractive", actual_backend="extractive")
     if cfg.llm_api_key:
         try:
-            return call_llm(prompt, cfg)
-        except (requests.RequestException, KeyError, ValueError, json.JSONDecodeError):
-            pass
-    return extractive_answer(question, entries)
+            answer = call_llm(build_prompt(question, entries), cfg)
+            state = DependencyState(status="success", reason_code="completed", actual_backend="llm")
+        except (requests.RequestException, KeyError, ValueError, IndexError, TypeError, AttributeError) as error:
+            state = DependencyState(status="fallback", reason_code=dependency_error_code(error), actual_backend="extractive")
+            answer = extractive_answer(question, entries)
+    else:
+        answer = extractive_answer(question, entries)
+    state.elapsed_ms = max(0, int((time.perf_counter() - started) * 1000))
+    state.result_count = len(answer.paragraphs)
+    answer.generation_state = state
+    return answer
