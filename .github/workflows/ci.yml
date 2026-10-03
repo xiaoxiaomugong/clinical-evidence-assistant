@@ -60,6 +60,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
@@ -102,3 +104,12 @@ jobs:
         run: |
           python scripts/freeze_current_baseline.py --output data/eval_runs/ci-current-c0
           python -m eval.run_p0 --baseline-source current --baseline data/eval_runs/ci-current-c0 --output data/eval_runs/ci-regression --profiles C0 --arms G1
+      - name: Compare C0 against independent Git reference
+        env:
+          CEA_REFERENCE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          test -n "$CEA_REFERENCE_SHA"
+          python scripts/freeze_reference_from_git.py --ref "$CEA_REFERENCE_SHA" --output data/eval_runs/ci-fixed-reference
+          python -m eval.run_p0 --baseline-source current --baseline data/eval_runs/ci-fixed-reference --output data/eval_runs/ci-cross-version --profiles C0 --arms G1
+      - name: Independent synthetic C0 annotation loop
+        run: python -m eval.independent synthetic-e2e --output data/eval_runs/ci-independent-synthetic

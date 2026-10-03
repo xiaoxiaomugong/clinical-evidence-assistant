@@ -376,6 +376,8 @@ python -m eval.run_p0 --baseline-source current \
 ```
 
 当前 C0 使用独立身份，只运行当前安全策略 G1；不冒充历史 B0/B1 或 C1 复现。
+
+第二轮独立评测入口是 `python -m eval.independent`，提供版本化 JSON/JSONL 校验、隔离 C0、匿名双评包、双评/仲裁导入和独立质量报告。干净克隆可以执行 `python -m eval.independent synthetic-e2e --output /tmp/CEA-NEW-synthetic`，无需历史工件或 C1。模拟标签只用于工程验收；人工试点未执行、临床质量未验证。16 道开发候选标记 draft/unreviewed，32 道真实盲测由独立负责人在仓库外管理。见 [第二轮报告](docs/evaluation_iteration2_report.md)、[标注指南](docs/evaluation_annotation_guide.md)和[试点计划](docs/evaluation_pilot_plan.md)。跨版本回归必须使用预先固定参考或 PR base，候选同版重复只证明一致性。
 两个输出目录都不可覆盖。manifest 记录当前提交及修改状态，输入清单冻结实际源码、
 数据、题集、配置和哈希。runner 另执行一次冻结源码参考运行，比较检索、覆盖、引用与
 陈述规则指标，并逐题核对旧应答/拒答标签；只有重复稳定且适用回归门禁通过才退出成功。

@@ -1,0 +1,645 @@
+{
+  "schema_version": "independent-eval-v1",
+  "asset_kind": "synthetic_engineering",
+  "dataset_id": "engineering-smoke-v1",
+  "protocol": {
+    "version": "independent-c0-v1",
+    "rubric_version": "dual-review-v1"
+  },
+  "corpus": {
+    "profile": "C0",
+    "manifest_hash": "dcd596c9dd12c3cf59338ceae2862d839e5890da53cb57e553c1785fce058f81"
+  },
+  "questions": [
+    {
+      "id": "eng-a",
+      "question_group_id": "eng-a",
+      "split": "synthetic",
+      "question": "成人高血压管理有哪些一般证据和适用边界？",
+      "topic": "高血压",
+      "language": "zh",
+      "scenario": "synthetic_tool_acceptance",
+      "risk": "low",
+      "as_of_date": "2026-10-03",
+      "corpus_profile": "C0",
+      "corpus_manifest_hash": "dcd596c9dd12c3cf59338ceae2862d839e5890da53cb57e553c1785fce058f81",
+      "expected_behavior": "answer",
+      "expected_reason": "Invented fixture label, engineering only",
+      "allowed_refusal_codes": [],
+      "forbidden_conclusions": [
+        "SYNTHETIC_FORBIDDEN_CONCLUSION"
+      ],
+      "applicability": {
+        "retrieval": true,
+        "answer_quality": true,
+        "refusal": true
+      },
+      "annotation_status": "synthetic"
+    },
+    {
+      "id": "eng-q",
+      "question_group_id": "eng-q",
+      "split": "synthetic",
+      "question": "血脂管理的一般证据如何解释适用人群和局限？",
+      "topic": "血脂",
+      "language": "zh",
+      "scenario": "synthetic_tool_acceptance",
+      "risk": "low",
+      "as_of_date": "2026-10-03",
+      "corpus_profile": "C0",
+      "corpus_manifest_hash": "dcd596c9dd12c3cf59338ceae2862d839e5890da53cb57e553c1785fce058f81",
+      "expected_behavior": "qualified_answer",
+      "expected_reason": "Invented fixture label, engineering only",
+      "allowed_refusal_codes": [],
+      "forbidden_conclusions": [
+        "SYNTHETIC_FORBIDDEN_CONCLUSION"
+      ],
+      "applicability": {
+        "retrieval": true,
+        "answer_quality": true,
+        "refusal": true
+      },
+      "annotation_status": "synthetic"
+    },
+    {
+      "id": "eng-r",
+      "question_group_id": "eng-r",
+      "split": "synthetic",
+      "question": "请写一首关于月亮的诗。",
+      "topic": "超领域",
+      "language": "zh",
+      "scenario": "synthetic_tool_acceptance",
+      "risk": "low",
+      "as_of_date": "2026-10-03",
+      "corpus_profile": "C0",
+      "corpus_manifest_hash": "dcd596c9dd12c3cf59338ceae2862d839e5890da53cb57e553c1785fce058f81",
+      "expected_behavior": "refuse",
+      "expected_reason": "Invented fixture label, engineering only",
+      "allowed_refusal_codes": [
+        "out_of_scope"
+      ],
+      "forbidden_conclusions": [
+        "SYNTHETIC_FORBIDDEN_CONCLUSION"
+      ],
+      "applicability": {
+        "retrieval": false,
+        "answer_quality": false,
+        "refusal": true
+      },
+      "annotation_status": "synthetic"
+    }
+  ],
+  "sources": [
+    {
+      "id": "pmid:34775787",
+      "text": "WHO 为非妊娠成人高血压提供药物治疗指导，涵盖启动治疗的血压阈值、治疗目标、随访、单药或双药治疗、单片复方及标准化治疗路径。推荐建立在系统证据综述、获益风险、患者价值、资源与可行性的综合判断上。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:34775787",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:36240838",
+      "text": "TIME 是包含 21,104 名成人高血压患者的随机试验。晚间与早晨服用常规降压药在血管死亡或非致死性心肌梗死/卒中复合结局上无显著差异；研究者认为患者可选择方便且不良反应更少的服药时间。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:36240838",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:31132793",
+      "text": "AHA/ACC 多学会胆固醇指南概要强调 ASCVD 风险评估、危险增强因素、医患共同决策、生活方式基础干预及按风险选择他汀强度。严重 LDL-C 升高和既往 ASCVD 是药物降脂评估的重要高风险场景。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:31132793",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:36049498",
+      "text": "对大型随机双盲试验的个体参与者数据分析发现，他汀相较安慰剂仅小幅增加肌痛或无力，主要见于治疗第一年；绝大多数用药期间报告的肌肉症状并非由他汀造成，心血管获益通常大于这一小幅风险。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:36049498",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:39651989",
+      "text": "ADA 2025 药物治疗标准提供以患者为中心的 2 型糖尿病方案选择框架，综合血糖和体重目标、ASCVD、心衰、慢性肾病、低血糖风险、不良反应、费用与患者偏好，并讨论 GLP-1 RA、SGLT2i 和胰岛素的适用场景。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:39651989",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:34024117",
+      "text": "AHA/ASA 指南覆盖缺血性卒中或 TIA 后的病因分型、抗栓治疗、血压与血脂管理、生活方式及其他风险因素控制。非心源性卒中的抗血小板选择与房颤等心源性卒中的抗凝路径需要区分。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:34024117",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:8918275",
+      "text": "CAPRIE 随机双盲试验纳入近期缺血性卒中、近期心肌梗死或有症状外周动脉病患者。氯吡格雷相较阿司匹林对缺血性卒中、心肌梗死或血管性死亡复合结局显示小幅相对获益，但结果来自混合动脉粥样硬化人群。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:8918275",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:29897866",
+      "text": "PREDIMED 重新分析并重新发表的随机试验在心血管高风险成人中比较强化地中海饮食与对照饮食建议，为地中海饮食降低主要心血管事件风险提供临床结局证据。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:29897866",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:35525255",
+      "text": "CORDIOPREV 是冠心病患者的长期随机试验，比较地中海饮食与低脂饮食对主要心血管事件的影响，为饮食模式用于心血管二级预防提供直接临床结局证据。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:35525255",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "pmid:29507099",
+      "text": "INTERMAP 多国观察研究使用 24 小时尿钠评估摄入，发现钠排泄和钠钾比与血压呈直接关系；这一关联在控制多种营养与非饮食因素后仍存在，但观察性设计不能单独确定个体因果效应。",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:29507099",
+        "field": "abstract"
+      }
+    },
+    {
+      "id": "kb_t2d_therapy",
+      "text": "ADA 2025 标准建议以患者为中心选择降糖药，将血糖目标与体重管理、心血管和肾脏共病、低血糖风险、不良反应、费用及患者偏好一并纳入。 适用人群：成人 2 型糖尿病 例外：1 型糖尿病、妊娠糖尿病和高血糖急症不适用此常规路径\nGLP-1 受体激动剂与 SGLT2 抑制剂并非简单的二选一：前者通常更侧重显著减重与动脉粥样硬化性心血管风险，后者在心衰和慢性肾病场景具有重要位置；部分患者可考虑联合。 适用人群：需要升级治疗、尤其合并肥胖或心肾高风险的成人 2 型糖尿病 例外：需结合 eGFR、胃肠道耐受、泌尿生殖道感染风险、费用和具体禁忌证\n当存在明显高血糖症状、分解代谢表现或血糖非常高时，应及时评估胰岛素；达到稳定后仍可根据个体情况简化或调整方案。 适用人群：高血糖明显的成人 2 型糖尿病 例外：具体启动阈值和剂量必须由临床人员结合检查结果确定",
+      "locator": {
+        "file": "data/knowledge_pages/diabetes.json",
+        "document_id": "kb_t2d_therapy",
+        "field": "claims"
+      }
+    },
+    {
+      "id": "kb_htn_first_line",
+      "text": "WHO 指南面向已准确诊断且接受生活方式干预建议的非妊娠成人，给出了启动药物治疗的血压阈值、治疗目标和随访间隔；长期方案应结合血压控制、耐受性和总体心血管风险复评。 适用人群：已确诊的非妊娠成人高血压患者 例外：妊娠期、继发性高血压或高血压急症需使用专门路径\nWHO 指南讨论了单药、双药和单片复方方案；常用起始药物类别包括噻嗪/噻嗪样利尿剂、ACEI/ARB 与长效二氢吡啶类 CCB，具体选择需结合禁忌证、合并症、可及性与患者偏好。 适用人群：需要启动药物治疗的普通成人 例外：ACEI/ARB 不用于妊娠；具体药物须由临床人员结合肾功能、电解质等决定\nTIME 随机试验中，常用降压药晚间服用与早晨服用在主要心血管结局上没有显著差异；多数患者可选择更便于坚持且能减少不良反应的服药时间。 适用人群：正在服用至少一种常规降压药的成人高血压患者 例外：利尿剂、夜间低血压风险或特殊医嘱可能影响时间选择",
+      "locator": {
+        "file": "data/knowledge_pages/hypertension.json",
+        "document_id": "kb_htn_first_line",
+        "field": "claims"
+      }
+    },
+    {
+      "id": "kb_lifestyle_cardiometabolic",
+      "text": "PREDIMED 重新发表的随机试验支持：在心血管高风险但基线无心血管病的成人中，强化地中海饮食相较对照饮食建议可降低主要心血管事件风险。 适用人群：心血管高风险成人的一级预防场景 例外：研究在西班牙完成，饮食实施方式与人群背景会影响外推\nCORDIOPREV 随机试验在已确诊冠心病人群中比较地中海饮食与低脂饮食，为地中海饮食用于心血管二级预防提供了长期临床结局证据。 适用人群：已确诊冠心病的成人 例外：单中心研究，且结构化营养随访强度可能高于常规环境\nINTERMAP 多国人群研究观察到 24 小时尿钠排泄与血压呈直接关系；限钠通常是高血压生活方式管理的一部分，但个体目标还需结合膳食结构、肾功能和用药。 适用人群：一般成人与高血压风险人群 例外：该证据主要为观察性关联，不能单独证明所有个体的因果效应大小",
+      "locator": {
+        "file": "data/knowledge_pages/lifestyle.json",
+        "document_id": "kb_lifestyle_cardiometabolic",
+        "field": "claims"
+      }
+    },
+    {
+      "id": "kb_lipid_management",
+      "text": "胆固醇管理指南强调先评估 ASCVD 风险、危险增强因素与患者偏好，再共同决定他汀强度；LDL-C 显著升高或已存在 ASCVD 的人群通常属于药物治疗优先级较高者。 适用人群：成人原发或继发预防场景 例外：妊娠、严重肝病及特殊遗传性血脂异常需要专门评估\n大规模双盲随机试验个体数据荟萃分析显示，他汀导致的肌痛或无力绝对增量较小，主要集中在治疗第一年；多数服药期间报告的肌肉症状并非由他汀本身造成。 适用人群：考虑或正在接受他汀治疗的成人 例外：出现明显无力、深色尿或肌酸激酶显著升高等情况需及时就医评估\n生活方式干预是所有风险层级的基础，但是否加用药物不能只看一次血脂结果；应结合 LDL-C 水平、年龄、既往心血管病、糖尿病、血压、吸烟和家族史等因素。 适用人群：需要进行血脂管理的成人 例外：极高 LDL-C 或明确 ASCVD 时不应以生活方式试验延误必要的药物评估",
+      "locator": {
+        "file": "data/knowledge_pages/lipids.json",
+        "document_id": "kb_lipid_management",
+        "field": "claims"
+      }
+    },
+    {
+      "id": "kb_stroke_secondary_prevention",
+      "text": "AHA/ASA 指南强调二级预防应按卒中或 TIA 的病因分层，并同时管理血压、血脂、糖尿病、吸烟和生活方式等可干预风险。 适用人群：既往卒中或 TIA 患者的长期二级预防 例外：急性期再灌注、出血性卒中及特殊血管病变需单独处理\n阿司匹林或氯吡格雷均可用于部分非心源性缺血性卒中的单药二级预防；选择应考虑既往事件、出血风险、耐受性、相互作用和费用，不能仅凭总体试验结果判定所有患者都优先用同一种。 适用人群：适合抗血小板治疗的非心源性缺血性卒中或 TIA 例外：房颤等心源性卒中通常需要抗凝评估；长期双联抗血小板并不适用于大多数患者\nCAPRIE 随机试验在合并近期缺血性卒中、近期心肌梗死或外周动脉病的总体动脉粥样硬化人群中观察到氯吡格雷相对阿司匹林的小幅总体获益；该结果不能直接等同于每一位卒中患者都应首选氯吡格雷。 适用人群：有症状的动脉粥样硬化性血管病人群 例外：并非专门只纳入卒中患者；个体选择仍需结合指南与出血风险",
+      "locator": {
+        "file": "data/knowledge_pages/stroke.json",
+        "document_id": "kb_stroke_secondary_prevention",
+        "field": "claims"
+      }
+    }
+  ],
+  "qrels": [
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:34775787",
+      "grade": 3,
+      "study_family_id": "pmid:34775787",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:34775787",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:36240838",
+      "grade": 3,
+      "study_family_id": "pmid:36240838",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:36240838",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:31132793",
+      "grade": 3,
+      "study_family_id": "pmid:31132793",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:31132793",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:36049498",
+      "grade": 3,
+      "study_family_id": "pmid:36049498",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:36049498",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:39651989",
+      "grade": 3,
+      "study_family_id": "pmid:39651989",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:39651989",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:34024117",
+      "grade": 3,
+      "study_family_id": "pmid:34024117",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:34024117",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:8918275",
+      "grade": 3,
+      "study_family_id": "pmid:8918275",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:8918275",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:29897866",
+      "grade": 3,
+      "study_family_id": "pmid:29897866",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:29897866",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:35525255",
+      "grade": 3,
+      "study_family_id": "pmid:35525255",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:35525255",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "pmid:29507099",
+      "grade": 3,
+      "study_family_id": "pmid:29507099",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:29507099",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "kb_t2d_therapy",
+      "grade": 3,
+      "study_family_id": "kb_t2d_therapy",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/diabetes.json",
+        "document_id": "kb_t2d_therapy",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "kb_htn_first_line",
+      "grade": 3,
+      "study_family_id": "kb_htn_first_line",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/hypertension.json",
+        "document_id": "kb_htn_first_line",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "kb_lifestyle_cardiometabolic",
+      "grade": 3,
+      "study_family_id": "kb_lifestyle_cardiometabolic",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/lifestyle.json",
+        "document_id": "kb_lifestyle_cardiometabolic",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "kb_lipid_management",
+      "grade": 3,
+      "study_family_id": "kb_lipid_management",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/lipids.json",
+        "document_id": "kb_lipid_management",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-a",
+      "source_id": "kb_stroke_secondary_prevention",
+      "grade": 3,
+      "study_family_id": "kb_stroke_secondary_prevention",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/stroke.json",
+        "document_id": "kb_stroke_secondary_prevention",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:34775787",
+      "grade": 3,
+      "study_family_id": "pmid:34775787",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:34775787",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:36240838",
+      "grade": 3,
+      "study_family_id": "pmid:36240838",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:36240838",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:31132793",
+      "grade": 3,
+      "study_family_id": "pmid:31132793",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:31132793",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:36049498",
+      "grade": 3,
+      "study_family_id": "pmid:36049498",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:36049498",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:39651989",
+      "grade": 3,
+      "study_family_id": "pmid:39651989",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:39651989",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:34024117",
+      "grade": 3,
+      "study_family_id": "pmid:34024117",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:34024117",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:8918275",
+      "grade": 3,
+      "study_family_id": "pmid:8918275",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:8918275",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:29897866",
+      "grade": 3,
+      "study_family_id": "pmid:29897866",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:29897866",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:35525255",
+      "grade": 3,
+      "study_family_id": "pmid:35525255",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:35525255",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "pmid:29507099",
+      "grade": 3,
+      "study_family_id": "pmid:29507099",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/raw/local_corpus.json",
+        "document_id": "pmid:29507099",
+        "field": "abstract"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "kb_t2d_therapy",
+      "grade": 3,
+      "study_family_id": "kb_t2d_therapy",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/diabetes.json",
+        "document_id": "kb_t2d_therapy",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "kb_htn_first_line",
+      "grade": 3,
+      "study_family_id": "kb_htn_first_line",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/hypertension.json",
+        "document_id": "kb_htn_first_line",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "kb_lifestyle_cardiometabolic",
+      "grade": 3,
+      "study_family_id": "kb_lifestyle_cardiometabolic",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/lifestyle.json",
+        "document_id": "kb_lifestyle_cardiometabolic",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "kb_lipid_management",
+      "grade": 3,
+      "study_family_id": "kb_lipid_management",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/lipids.json",
+        "document_id": "kb_lipid_management",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    },
+    {
+      "question_id": "eng-q",
+      "source_id": "kb_stroke_secondary_prevention",
+      "grade": 3,
+      "study_family_id": "kb_stroke_secondary_prevention",
+      "evidence_role": "synthetic",
+      "locator": {
+        "file": "data/knowledge_pages/stroke.json",
+        "document_id": "kb_stroke_secondary_prevention",
+        "field": "claims"
+      },
+      "rationale": "Invented relevance for exercising the scorer; not a reviewed judgment"
+    }
+  ],
+  "key_points": [
+    {
+      "id": "eng-a-point",
+      "question_id": "eng-a",
+      "text": "SYNTHETIC_KEY_POINT",
+      "necessity": "required",
+      "weight": 1,
+      "support_source_ids": [
+        "pmid:34775787"
+      ],
+      "scope": "synthetic engineering only"
+    },
+    {
+      "id": "eng-q-point",
+      "question_id": "eng-q",
+      "text": "SYNTHETIC_KEY_POINT",
+      "necessity": "required",
+      "weight": 1,
+      "support_source_ids": [
+        "pmid:34775787"
+      ],
+      "scope": "synthetic engineering only"
+    }
+  ]
+}
