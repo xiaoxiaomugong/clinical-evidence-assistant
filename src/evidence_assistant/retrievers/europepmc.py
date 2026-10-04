@@ -23,6 +23,7 @@ def europepmc_search(spec: QuerySpec, top_k: int = 5, cfg: Settings = settings) 
         timeout=cfg.request_timeout,
         min_interval=cfg.rate_limit_seconds,
         max_attempts=cfg.api_max_attempts,
+        retry_sleep_cap_seconds=cfg.api_retry_sleep_cap_seconds,
     )
     response.raise_for_status()
     documents: List[Document] = []

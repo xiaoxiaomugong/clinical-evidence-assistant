@@ -43,6 +43,7 @@ def settings_values(run: Path, profile: str, arm: str, cache: Path) -> dict:
         minimum_independent_sources=3, rrf_k=60, pre_refusal_threshold=0.18,
         post_failure_threshold=0.5, request_timeout=12, rate_limit_seconds=0.35,
         api_max_attempts=3, live_cache_ttl_seconds=3600, enable_live_apis=False,
+        llm_request_timeout=45.0, api_retry_sleep_cap_seconds=5.0,
         filter_preprint=True, llm_api_key="", llm_base_url="https://api.openai.com/v1",
         llm_model="gpt-4.1-mini", pubmed_api_key="", ncbi_email="",
         enable_supabase=False, supabase_url="", supabase_publishable_key="",
@@ -56,7 +57,8 @@ def construct_settings(settings_class, values: dict, historical: bool = False):
     expected = {field.name for field in dataclasses.fields(settings_class)}
     values = dict(values)
     if historical:
-        for field in ("candidate_pool_policy", "top8_selection_policy"):
+        for field in ("candidate_pool_policy", "top8_selection_policy", "llm_request_timeout",
+                      "api_retry_sleep_cap_seconds"):
             if field not in expected:
                 values.pop(field, None)
     if set(values) != expected:
@@ -243,9 +245,13 @@ def quantiles(values: list) -> dict:
     return {"p%d_ms" % pct: ordered[math.ceil(pct / 100 * len(ordered)) - 1] if ordered else None for pct in (50, 95, 99)}
 
 
-def run_performance(cfg, arm: str, items: list, trials: int) -> dict:
+def run_performance(cfg, arm: str, items: list, trials: int, shared_pipeline: bool = False) -> dict:
     if trials < 100:
         raise ValueError("Performance requires at least 100 trials per concurrency")
+    if shared_pipeline:
+        if arm != 'G1':
+            raise ValueError('Shared service performance supports current safe G1 only')
+        return run_shared_service_performance(cfg, items, trials)
     answerable = [item for item in items if item.get("should_answer")]
     refusal_items = [item for item in items if item.get("should_answer") is False]
     if not answerable:
@@ -315,6 +321,76 @@ def run_performance(cfg, arm: str, items: list, trials: int) -> dict:
             "hardware_limitations": "Power mode, CPU frequency and system contention uncontrolled; GPU not evaluated"}
 
 
+def run_shared_service_performance(cfg, items: list, trials: int) -> dict:
+    """Measure the actual Web/Tool shared-pipeline admission path with fixed inputs."""
+    from evidence_assistant.query_service import QueryService, QueryBusyError
+    answerable = [item for item in items if item.get('should_answer')]
+    if not answerable:
+        return {'status': 'not_evaluated', 'reason': 'No labeled answerable questions'}
+    reports = []
+    for concurrency in (1, 4):
+        started = time.perf_counter()
+        service = QueryService(_pipeline(cfg, 'G1'))
+        initialization = (time.perf_counter() - started) * 1000
+        began = time.perf_counter()
+        first_result = service.run(answerable[0]['question'], enable_live_apis=False)
+        first = (time.perf_counter() - began) * 1000
+        measured_items = [] if first_result.answer.refused else [answerable[0]]
+        for item in answerable[1:]:
+            result = service.run(item['question'], enable_live_apis=False)
+            if not result.answer.refused:
+                measured_items.append(item)
+        if not measured_items:
+            return {'status': 'not_evaluated',
+                    'reason': 'No labeled answerable question is answered by the frozen current implementation'}
+        for number in range(10):
+            service.run(measured_items[number % len(measured_items)]['question'], enable_live_apis=False)
+
+        def request(item, submitted):
+            began = time.perf_counter()
+            try:
+                result = service.run(item['question'], enable_live_apis=False)
+                return {'question_id': item['id'], 'run_status': 'success',
+                        'answer_status': 'refused' if result.answer.refused else 'answered',
+                        'wall_ms': (time.perf_counter() - began) * 1000,
+                        'submission_wait_ms': (began - submitted) * 1000,
+                        'queue_ms': result.queue_elapsed_ms,
+                        'execution_ms': result.execution_elapsed_ms}
+            except Exception as error:
+                return {'question_id': item['id'], 'run_status': 'busy' if isinstance(error, QueryBusyError) else 'error',
+                        'wall_ms': (time.perf_counter() - began) * 1000,
+                        'submission_wait_ms': (began - submitted) * 1000,
+                        'queue_ms': None, 'execution_ms': None}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [executor.submit(request, measured_items[i % len(measured_items)], time.perf_counter())
+                       for i in range(trials)]
+            samples = [future.result() for future in futures]
+        answered = [row for row in samples if row.get('answer_status') == 'answered']
+        reports.append({'concurrency': concurrency, 'pipeline_count': 1, 'warmup_count': 10,
+                        'trial_count': trials, 'actual_answered_count': len(answered),
+                        'answer_trial_requirement_met': len(answered) >= 100,
+                        'eligibility_probe_count': len(answerable),
+                        'eligible_question_count': len(measured_items),
+                        'initialization_ms': initialization, 'first_request_ms': first,
+                        'all_requests': quantiles([row['wall_ms'] for row in samples]),
+                        'answered_requests': quantiles([row['wall_ms'] for row in answered]),
+                        'queue': quantiles([row['queue_ms'] for row in samples if row['queue_ms'] is not None]),
+                        'execution': quantiles([row['execution_ms'] for row in samples if row['execution_ms'] is not None]),
+                        'submission_wait': quantiles([row['submission_wait_ms'] for row in samples]),
+                        'errors': sum(row['run_status'] == 'error' for row in samples),
+                        'busy': sum(row['run_status'] == 'busy' for row in samples),
+                        'timeouts': None,
+                        'timeout_policy': 'Queue admission is bounded; no full-pipeline hard deadline; timeout rate N/A',
+                        'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == 'darwin' else 1024),
+                        'samples': samples})
+    return {'status': 'measured', 'quantile_method': 'nearest_rank', 'profiles': reports,
+            'cache_protocol': 'One shared pipeline per concurrency group; labeled answerable questions are probed once, then currently answered questions receive 10 warmups and fixed trials',
+            'memory_scope': 'process RSS high-water mark; later group includes earlier allocations',
+            'hardware_limitations': 'CPU power, contention and OS cache uncontrolled; GPU not evaluated',
+            'queue_scope': 'In-service lock wait excludes executor scheduling; full batch submission wait reported separately'}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True)
@@ -322,6 +398,7 @@ def main(argv=None) -> int:
     parser.add_argument("--arm", choices=("B0", "B1", "R1", "I1", "G1", "R2", "D1", "RD"), required=True)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--performance", type=int, default=0)
+    parser.add_argument('--shared-pipeline', action='store_true')
     parser.add_argument("--save-questions", action="store_true")
     args = parser.parse_args(argv)
     if os.environ.get("CEA_ISOLATED_WORKER") != "1" or os.environ.get("EVIDENCE_ASSISTANT_ENV_FILE") != os.devnull:
@@ -342,8 +419,10 @@ def main(argv=None) -> int:
     qrels = json.loads(qrels_path.read_text()) if qrels_path.exists() else None
     try:
         if args.performance:
-            write_json(output / "performance.json", run_performance(cfg, args.arm, items, args.performance))
-            failed = False
+            measured = run_performance(cfg, args.arm, items, args.performance, args.shared_pipeline)
+            write_json(output / "performance.json", measured)
+            failed = any(group['errors'] or group.get('busy', 0) or not group['answer_trial_requirement_met']
+                         for group in measured.get('profiles', []))
         else:
             rows = run_regression(cfg, args.arm, args.profile, args.repeat, output, items, qrels, args.save_questions)
             failed = any(row["run_status"] == "error" for row in rows)

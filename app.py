@@ -15,6 +15,9 @@ import streamlit as st
 
 from evidence_assistant.config import settings
 from evidence_assistant.pipeline import EvidencePipeline
+from evidence_assistant.query_service import (
+    MAX_QUESTION_LENGTH, QueryBusyError, QueryExecutionError, QueryService, QueryValidationError,
+)
 
 
 st.set_page_config(
@@ -80,13 +83,58 @@ def set_example(question: str) -> None:
     st.session_state["question"] = question
 
 
+DEPENDENCY_LABELS = {
+    "pubmed": "PubMed", "europepmc": "Europe PMC", "clinicaltrials": "ClinicalTrials.gov",
+    "supabase": "云证据库", "generator": "生成器",
+}
+DEPENDENCY_STATUS_LABELS = {
+    "disabled": "未启用", "not_attempted": "未尝试", "success": "成功",
+    "empty": "已尝试，无结果", "error": "调用失败", "fallback": "已回退",
+}
+DEPENDENCY_REASON_LABELS = {
+    "timeout": "超时", "connection_error": "连接失败", "rate_limited": "供应商限流",
+    "http_error": "供应商响应异常", "request_error": "请求失败", "invalid_response": "响应不可用",
+    "dependency_error": "依赖不可用", "configuration_error": "配置不可用",
+    "offline_extractive": "正常离线抽取式回答", "safety_gate": "安全门控阻断",
+    "evidence_gate": "证据门控提前拒答", "generation_gate": "生成证据不足",
+    "mode_excluded": "当前模式未使用", "local_evidence_sufficient": "本地证据已足够",
+}
+
+
+def dependency_value(state, field):
+    return state.get(field) if isinstance(state, dict) else getattr(state, field, None)
+
+
+def render_dependency_states(result) -> None:
+    states = getattr(result, "dependency_states", {})
+    for name, label in DEPENDENCY_LABELS.items():
+        state = states.get(name)
+        if state is None:
+            continue
+        status = DEPENDENCY_STATUS_LABELS.get(dependency_value(state, "status"), "状态未知")
+        reason = DEPENDENCY_REASON_LABELS.get(dependency_value(state, "reason_code"), "")
+        st.caption(f"{label}：{status}" + (f" · {reason}" if reason else ""))
+
+
+def live_status_label(result) -> str:
+    states = getattr(result, "dependency_states", {})
+    live = [dependency_value(states[name], "status") for name in ("pubmed", "europepmc", "clinicaltrials") if name in states]
+    if not live:
+        return "已用" if result.used_live_api else "离线"
+    if "success" in live:
+        return "已获取证据"
+    if "error" in live or "fallback" in live:
+        return "调用失败"
+    if "empty" in live:
+        return "已尝试，无结果"
+    if "not_attempted" in live:
+        return "未尝试"
+    return "未启用"
+
+
 def render_answer(result) -> None:
     if result.degraded:
-        reasons = "；".join(result.degradation_reasons) or "可选模型后端不可用"
-        st.warning(
-            f"本次已安全降级：检索={result.retrieval_backend}，"
-            f"重排={result.rerank_backend}。{reasons}"
-        )
+        st.warning("本次已安全降级：部分依赖未成功，已使用可用证据或抽取式生成继续处理。请查看本次依赖状态。")
     if result.answer.refused:
         st.markdown('<span class="status-stop">证据不足 · 已安全拒答</span>', unsafe_allow_html=True)
         st.error(result.answer.reason)
@@ -217,7 +265,7 @@ with st.sidebar:
     if pipeline.supabase_corpus:
         st.caption("☁ Supabase 云端证据库已启用；不可用时自动回退本地语料。")
     elif pipeline.supabase_configuration_error:
-        st.caption(f"☁ Supabase 配置未生效：{pipeline.supabase_configuration_error}")
+        st.caption("☁ Supabase 配置未生效，请管理员检查运行配置。")
     st.markdown(
         '<p class="sidebar-note">覆盖：心脑血管病、血脂、高血压、糖尿病。默认不保存问题，不应输入可识别患者信息。</p>',
         unsafe_allow_html=True,
@@ -251,20 +299,29 @@ with st.form("question_form"):
         height=110,
         placeholder="例如：40 岁男性、无心血管病史、LDL-C 4.2 mmol/L，是否应启动他汀治疗？",
         label_visibility="collapsed",
+        max_chars=MAX_QUESTION_LENGTH,
+        help="去除首尾空白后请输入 1–4000 个字符；请勿提交可识别患者的信息。",
     )
     submitted = st.form_submit_button("检索可信证据", type="primary", use_container_width=True)
 
 if submitted:
-    if not question.strip():
-        st.warning("请先输入一个临床问题。")
-    else:
+    st.session_state.pop("last_result", None)
+    try:
         with st.spinner("正在改写问题、检索与核对引用…"):
-            result = pipeline.run(question.strip(), mode=mode_label, enable_live_apis=live_apis)
+            result = QueryService(pipeline).run(question, mode=mode_label, enable_live_apis=live_apis)
         st.session_state["last_result"] = result
+    except QueryValidationError as error:
+        st.warning(f"请输入 1–4000 字符的临床问题，并检查检索选项。请求编号：{error.request_id}")
+    except QueryBusyError as error:
+        st.warning(f"服务繁忙，请稍后重试。请求编号：{error.request_id}")
+    except QueryExecutionError as error:
+        st.error(f"本次请求处理失败，请稍后重试。请求编号：{error.request_id}")
 
 result = st.session_state.get("last_result")
 if result:
     st.divider()
+    st.caption(f"请求编号：{result.request_id} · 排队 {result.queue_elapsed_ms:.1f} ms · 执行 {result.execution_elapsed_ms:.1f} ms")
+    render_dependency_states(result)
     left, right = st.columns([1.55, 1], gap="large")
     with left:
         render_answer(result)
@@ -273,7 +330,7 @@ if result:
         metric_a.metric("候选", len(result.entries))
         checked_count = len(result.citation_check.checked) if result.citation_check else 0
         metric_b.metric("已校验", checked_count)
-        metric_c.metric("实时源", "已用" if result.used_live_api else "离线")
+        metric_c.metric("实时源", live_status_label(result))
     if result.entries:
         render_evidence(result)
     with st.expander("查看检索与校验轨迹"):
@@ -295,4 +352,5 @@ if result:
                 "rerank_backend": result.rerank_backend,
                 "degraded": result.degraded,
                 "degradation_reasons": result.degradation_reasons,
+                "dependency_states": result.to_dict().get("dependency_states", {}),
             })

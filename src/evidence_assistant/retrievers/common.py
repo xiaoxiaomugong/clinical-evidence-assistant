@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import threading
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -47,6 +49,47 @@ _NEXT_REQUEST_AT: Dict[str, float] = {}
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
+def finite_nonnegative_seconds(value, default: float) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return seconds if math.isfinite(seconds) and seconds >= 0 else default
+
+
+def dependency_error_code(error: Exception) -> str:
+    """Classify failures without exposing exception messages or request URLs."""
+    if isinstance(error, requests.Timeout):
+        return "timeout"
+    if isinstance(error, requests.ConnectionError):
+        return "connection_error"
+    if isinstance(error, requests.HTTPError):
+        response = error.response
+        return "rate_limited" if response is not None and response.status_code == 429 else "http_error"
+    if isinstance(error, (ValueError, KeyError, IndexError, TypeError, AttributeError, SyntaxError)):
+        return "invalid_response"
+    if isinstance(error, requests.RequestException):
+        return "request_error"
+    return "dependency_error"
+
+
+def _retry_delay(retry_after, attempt: int, cap: float) -> float:
+    backoff = min(cap, 0.4 * (2 ** min(attempt, 63)))
+    try:
+        delay = float(retry_after)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            date = parsedate_to_datetime(retry_after)
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
+            delay = date.timestamp() - time.time()
+        except (TypeError, ValueError, OverflowError, AttributeError):
+            return backoff
+    if not math.isfinite(delay):
+        return backoff
+    return min(cap, max(0.0, delay))
+
+
 def _reserve_request_slot(source: str, min_interval: float) -> None:
     with _RATE_LOCK:
         now = time.monotonic()
@@ -65,9 +108,11 @@ def get_with_retry(
     timeout: int,
     min_interval: float,
     max_attempts: int,
+    retry_sleep_cap_seconds: float = 5.0,
 ) -> requests.Response:
     """Perform a rate-limited GET with bounded transient-error retries."""
     attempts = max(1, max_attempts)
+    cap = finite_nonnegative_seconds(retry_sleep_cap_seconds, 5.0)
     for attempt in range(attempts):
         _reserve_request_slot(source, min_interval)
         try:
@@ -83,16 +128,12 @@ def get_with_retry(
         except (requests.ConnectionError, requests.Timeout):
             if attempt + 1 >= attempts:
                 raise
-            time.sleep(0.4 * (2 ** attempt))
+            time.sleep(_retry_delay(None, attempt, cap))
             continue
         if response.status_code not in _RETRYABLE_STATUS or attempt + 1 >= attempts:
             return response
         retry_after = response.headers.get("Retry-After", "")
-        try:
-            delay = max(0.0, float(retry_after))
-        except ValueError:
-            delay = 0.4 * (2 ** attempt)
-        time.sleep(delay)
+        time.sleep(_retry_delay(retry_after, attempt, cap))
     raise RuntimeError("unreachable")
 
 
