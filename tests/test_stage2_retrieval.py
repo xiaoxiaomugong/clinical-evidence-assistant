@@ -139,10 +139,12 @@ class BrokenCrossEncoder:
         raise RuntimeError("model runtime unavailable")
 
 
-class PositiveCrossEncoder:
+class PreferHypertensionCrossEncoder:
     def predict(self, pairs, batch_size, show_progress_bar):
         del batch_size, show_progress_bar
-        return [5.0 for _ in pairs]
+        return [8.0 if "常用起始药物类别" in passage else
+                4.0 if "WHO 为非妊娠成人高血压" in passage else -8.0
+                for _, passage in pairs]
 
 
 def entry(entry_id: str, text: str) -> Entry:
@@ -208,24 +210,42 @@ def test_pipeline_uses_hybrid_and_cross_encoder_when_available(tmp_path):
         retrieval_backend="hybrid",
         embedding_model="fake-model",
         vector_index_path=tmp_path,
+        pdf_index_path=tmp_path / "absent.sqlite3",
         rerank_backend="cross_encoder",
         rerank_model="fake-reranker",
         enable_live_apis=False,
     )
     pipeline = EvidencePipeline(cfg)
-    indexed_chunks = list(pipeline.knowledge.all_chunks())
+    knowledge = {item.id: item for item in pipeline.knowledge.all_chunks()}
+
+    def dense_copy(claim_id):
+        original = knowledge[claim_id]
+        # Keep the real text and citations, but make dense-only retrieval visible.
+        return Chunk(**{**original.__dict__, "id": f"dense:{claim_id}"})
+
+    snapshots = {item.doc_id: item for item in pipeline.local_corpus.chunks}
+    indexed_chunks = [
+        Chunk(**{**snapshots["pmid:34775787"].__dict__,
+                 "id": "dense:pmid:34775787:chunk:1"}),
+        dense_copy("htn_claim_2"),
+        snapshots["pmid:36240838"],
+    ]
+    encoder = FakeEncoder()
     pipeline.dense_retriever = DenseRetriever(
         registry=IndexRegistry(tmp_path),
         corpus_version="test",
         model_name="fake-model",
-        encoder=FakeEncoder(),
-        index=FakeIndex(indexed_chunks[0], indexed_chunks[1], indexed_chunks[2]),
+        encoder=encoder,
+        index=FakeIndex(*indexed_chunks),
     )
-    pipeline.reranker = CrossEncoderReranker("fake-reranker", model=PositiveCrossEncoder())
+    pipeline.reranker = CrossEncoderReranker("fake-reranker", model=PreferHypertensionCrossEncoder())
 
     result = pipeline.run("降压药应早上服用还是睡前服用？")
 
     assert not result.answer.refused
+    assert result.evidence_gate.independent_source_count == 3
+    assert encoder.calls
+    assert result.entries[0].id == "dense:htn_claim_2"
     assert result.retrieval_backend == "hybrid"
     assert result.rerank_backend == "cross_encoder"
     assert not result.degraded

@@ -11,6 +11,8 @@ def test_find_web_app_from_source() -> None:
 
 def test_user_paths_are_platform_specific(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
     mac_cache, mac_config = desktop._user_paths("darwin")
     linux_cache, linux_config = desktop._user_paths("linux")

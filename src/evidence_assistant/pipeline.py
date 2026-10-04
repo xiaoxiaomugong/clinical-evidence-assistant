@@ -8,6 +8,7 @@ import requests
 
 from .config import Settings, settings
 from .candidate_pool import build
+from .answer_relevance import QuestionFocus, partition
 from .citation_check import sanitize_answer, verify
 from .generate import generate
 from .index_registry import IndexRegistry
@@ -360,7 +361,27 @@ class EvidencePipeline:
             if status.degraded and status.reason
         ]
 
-        evidence_gate = observer.call("evidence_gate", self._assess_top8_evidence, spec, entries)
+        direct_entries, background_entries = observer.call("question_coverage", partition, spec, entries)
+        observer.candidates("question_direct", direct_entries)
+        observer.candidates("question_background", background_entries)
+        if not direct_entries:
+            coverage_gate = EvidenceGateResult(
+                refused=True, code="QUESTION_NOT_COVERED",
+                reason="当前证据未直接覆盖问题中的关键干预、比较对象、结局或人群条件。",
+                found=["仅找到同领域或背景材料。"] if background_entries else [],
+                missing=["缺少能直接回答本次问题的可回查证据。"],
+                next_steps=["核对关键术语与 PICO 条件，并补查直接相关的原始资料。"],
+            )
+            trace.append("关键问题覆盖不足；未调用生成器")
+            return PipelineResult(
+                question=question, mode=canonical_mode, answer=refusal_answer(coverage_gate), entries=entries,
+                citation_check=None, trace=trace, query_spec=spec, evidence_gate=coverage_gate,
+                used_live_api=used_live, elapsed_ms=int((time.perf_counter()-started)*1000),
+                retrieval_backend=retrieval_status.actual, rerank_backend=rerank_status.actual,
+                degraded=bool(degradation_reasons), degradation_reasons=degradation_reasons,
+            )
+        relevant_entries = sorted(direct_entries + background_entries, key=lambda entry: entry.citation_number)
+        evidence_gate = observer.call("evidence_gate", self._assess_top8_evidence, spec, relevant_entries)
         if evidence_gate.refused:
             answer = refusal_answer(evidence_gate)
             trace.append(f"触发证据门控：{evidence_gate.code}；未调用生成器")
@@ -382,7 +403,7 @@ class EvidencePipeline:
             )
 
         generation_entries = observer.call("generation_selection", select_complementary,
-            entries,
+            relevant_entries,
             max_items=getattr(self.settings, "generation_top_k", 5),
         )
         observer.candidates("generation_top5", generation_entries)
@@ -409,6 +430,14 @@ class EvidencePipeline:
         changed_fields = [field for field in ("reason", "refusal_code", "found", "missing", "next_steps", "limitations")
                           if getattr(answer, field) != getattr(metadata_safe, field)]
         answer = metadata_safe
+        if not answer.refused:
+            focus = QuestionFocus.from_spec(spec)
+            before = len(answer.paragraphs)
+            answer.paragraphs = [paragraph for paragraph in answer.paragraphs
+                                 if focus.covers(paragraph.text)]
+            answer.removed_paragraph_count += before - len(answer.paragraphs)
+            if before != len(answer.paragraphs):
+                trace.append(f"问题相关性检查：移除 {before-len(answer.paragraphs)} 条未覆盖关键条件的陈述")
         if changed_fields:
             observer.answer("metadata_sanitized", answer, claim_ids, replaced_auxiliary_fields=changed_fields)
         trace.append(f"结构化生成完成：{answer.generator}")

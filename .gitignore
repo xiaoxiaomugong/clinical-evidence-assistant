@@ -9,6 +9,11 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+frontend/node_modules/
+frontend/coverage/
+frontend/.vite/
+*.tsbuildinfo
+.venv-web/
 .streamlit/secrets.toml
 data/cache/*.json
 data/eval_results/

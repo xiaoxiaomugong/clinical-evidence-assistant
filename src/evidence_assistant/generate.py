@@ -8,6 +8,8 @@ import requests
 from .config import Settings, settings
 from .schemas import Answer, AnswerParagraph, Entry
 from .output_policy import EXTRACTIVE_LIMITATIONS
+from .answer_relevance import QuestionFocus
+from .query_rewrite import rewrite
 
 
 COMMON_SAFETY_RULES = """规则：
@@ -107,6 +109,8 @@ def call_llm(prompt: str, cfg: Settings = settings) -> Answer:
 
 
 def extractive_answer(question: str, entries: List[Entry], max_paragraphs: int = 4) -> Answer:
+    focus = QuestionFocus.from_spec(rewrite(question))
+    entries = [entry for entry in entries if focus.direct(entry)]
     if not entries:
         return Answer(refused=True, reason="没有可引用证据。", generator="extractive")
     selected: List[Entry] = []
