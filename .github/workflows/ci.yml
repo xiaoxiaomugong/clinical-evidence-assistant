@@ -105,8 +105,9 @@ jobs:
           python scripts/freeze_current_baseline.py --output data/eval_runs/ci-current-c0
           python -m eval.run_p0 --baseline-source current --baseline data/eval_runs/ci-current-c0 --output data/eval_runs/ci-regression --profiles C0 --arms G1
       - name: Compare C0 against independent Git reference
+        if: github.event_name == 'pull_request'
         env:
-          CEA_REFERENCE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CEA_REFERENCE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           test -n "$CEA_REFERENCE_SHA"
           python scripts/freeze_reference_from_git.py --ref "$CEA_REFERENCE_SHA" --output data/eval_runs/ci-fixed-reference
