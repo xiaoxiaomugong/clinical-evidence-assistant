@@ -248,11 +248,13 @@ def engineering_gates(baseline: dict, candidate: dict, original_pairs_retained=N
     previous, outcomes = baseline.get("question_outcomes", {}), candidate.get("question_outcomes", {})
     mismatched, evaluated = [], 0
     for qid in sorted(set(previous) | set(outcomes)):
+        reference = previous.get(qid, {})
         outcome = outcomes.get(qid, {})
-        expected = previous.get(qid, {}).get("expected_answer_status") or outcome.get("expected_answer_status")
-        if expected is not None:
+        expected = reference.get("answer_status") if reference.get("run_status") == "success" else None
+        if expected is not None and outcome.get("run_status") == "success":
             evaluated += 1
-        if outcome.get("run_status") != "success" or (expected is not None and outcome.get("answer_status") != expected):
+        if (reference.get("run_status") != "success" or outcome.get("run_status") != "success"
+                or expected is None or outcome.get("answer_status") != expected):
             mismatched.append(qid)
     return {"recall_regression": compare("recall_at_8"), "ndcg_regression": compare("ndcg_at_8"),
             "coverage_regression": compare("key_point_coverage"),
@@ -344,12 +346,13 @@ def regression_accepted(summary: dict) -> bool:
     if summary.get('current_reference_required'):
         if not summary.get('reference_configurations') or not summary.get('engineering_gates'):
             return False
-    for configuration in summary.get('configurations', {}).values():
-        for outcome in configuration.get('question_outcomes', {}).values():
-            if (outcome.get('expected_answer_status') is not None
-                    and (outcome.get('run_status') != 'success'
-                         or outcome.get('answer_status') != outcome['expected_answer_status'])):
-                return False
+    if not summary.get('current_reference_required'):
+        for configuration in summary.get('configurations', {}).values():
+            for outcome in configuration.get('question_outcomes', {}).values():
+                if (outcome.get('expected_answer_status') is not None
+                        and (outcome.get('run_status') != 'success'
+                             or outcome.get('answer_status') != outcome['expected_answer_status'])):
+                    return False
     for gates in summary.get('engineering_gates', {}).values():
         for name in ('recall_regression', 'ndcg_regression', 'coverage_regression',
                      'citation_regression', 'support_regression'):

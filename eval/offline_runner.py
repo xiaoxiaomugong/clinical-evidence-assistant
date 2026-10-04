@@ -333,10 +333,18 @@ def run_shared_service_performance(cfg, items: list, trials: int) -> dict:
         service = QueryService(_pipeline(cfg, 'G1'))
         initialization = (time.perf_counter() - started) * 1000
         began = time.perf_counter()
-        service.run(answerable[0]['question'], enable_live_apis=False)
+        first_result = service.run(answerable[0]['question'], enable_live_apis=False)
         first = (time.perf_counter() - began) * 1000
+        measured_items = [] if first_result.answer.refused else [answerable[0]]
+        for item in answerable[1:]:
+            result = service.run(item['question'], enable_live_apis=False)
+            if not result.answer.refused:
+                measured_items.append(item)
+        if not measured_items:
+            return {'status': 'not_evaluated',
+                    'reason': 'No labeled answerable question is answered by the frozen current implementation'}
         for number in range(10):
-            service.run(answerable[number % len(answerable)]['question'], enable_live_apis=False)
+            service.run(measured_items[number % len(measured_items)]['question'], enable_live_apis=False)
 
         def request(item, submitted):
             began = time.perf_counter()
@@ -355,13 +363,15 @@ def run_shared_service_performance(cfg, items: list, trials: int) -> dict:
                         'queue_ms': None, 'execution_ms': None}
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = [executor.submit(request, answerable[i % len(answerable)], time.perf_counter())
+            futures = [executor.submit(request, measured_items[i % len(measured_items)], time.perf_counter())
                        for i in range(trials)]
             samples = [future.result() for future in futures]
         answered = [row for row in samples if row.get('answer_status') == 'answered']
         reports.append({'concurrency': concurrency, 'pipeline_count': 1, 'warmup_count': 10,
                         'trial_count': trials, 'actual_answered_count': len(answered),
                         'answer_trial_requirement_met': len(answered) >= 100,
+                        'eligibility_probe_count': len(answerable),
+                        'eligible_question_count': len(measured_items),
                         'initialization_ms': initialization, 'first_request_ms': first,
                         'all_requests': quantiles([row['wall_ms'] for row in samples]),
                         'answered_requests': quantiles([row['wall_ms'] for row in answered]),
@@ -375,7 +385,7 @@ def run_shared_service_performance(cfg, items: list, trials: int) -> dict:
                         'peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == 'darwin' else 1024),
                         'samples': samples})
     return {'status': 'measured', 'quantile_method': 'nearest_rank', 'profiles': reports,
-            'cache_protocol': 'One shared pipeline per concurrency group, 10 warmups, fixed answerable legacy questions',
+            'cache_protocol': 'One shared pipeline per concurrency group; labeled answerable questions are probed once, then currently answered questions receive 10 warmups and fixed trials',
             'memory_scope': 'process RSS high-water mark; later group includes earlier allocations',
             'hardware_limitations': 'CPU power, contention and OS cache uncontrolled; GPU not evaluated',
             'queue_scope': 'In-service lock wait excludes executor scheduling; full batch submission wait reported separately'}

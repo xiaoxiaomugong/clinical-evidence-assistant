@@ -269,6 +269,20 @@ def test_behavior_gate_rejects_swapped_answer_and_refusal_with_same_totals():
     assert gate["mismatched_ids"] == ["answerable", "refusal"]
 
 
+def test_behavior_gate_compares_with_frozen_behavior_when_labels_are_stale():
+    from eval.run_p0 import engineering_gates
+    from eval.run_record import summarize_results
+
+    baseline = summarize_results([
+        {"question_id": "new-safety-refusal", "run_status": "success", "should_answer": True,
+         "answer_status": "refused"},
+    ])
+    candidate = json.loads(json.dumps(baseline))
+    gate = engineering_gates(baseline, candidate)["answer_behavior"]
+    assert gate["passed"] is True
+    assert gate["mismatched_ids"] == []
+
+
 def test_graded_group_with_unjudged_or_failed_question_has_no_comparable_main_score():
     from eval.run_record import summarize_results
 

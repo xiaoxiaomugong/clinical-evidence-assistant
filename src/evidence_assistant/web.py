@@ -213,8 +213,10 @@ def _web_settings(root, runtime):
         lexical_retrieve_k=30, dense_retrieve_k=30, top_k=8, generation_top_k=5,
         embedding_batch_size=16, rerank_batch_size=16, minimum_independent_sources=3, rrf_k=60,
         pre_refusal_threshold=0.18, post_failure_threshold=0.5, request_timeout=12,
-        rate_limit_seconds=0.35, api_max_attempts=3, live_cache_ttl_seconds=3600,
+        rate_limit_seconds=0.35, api_max_attempts=3, api_retry_sleep_cap_seconds=5,
+        live_cache_ttl_seconds=3600,
         enable_live_apis=False, filter_preprint=True, llm_api_key="", llm_base_url="", llm_model="",
+        llm_request_timeout=45,
         pubmed_api_key="", ncbi_email="", enable_supabase=False, supabase_url="",
         supabase_publishable_key="", supabase_secret_key="", supabase_timeout=15,
     )
